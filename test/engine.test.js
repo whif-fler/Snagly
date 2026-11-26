@@ -96,3 +96,7 @@ test('prepareRoot creates and accepts an absolute directory', t => {
 test('fresh installs keep browser cookies off until the user opts in', () => {
   assert.equal(engine.getStatus().useCookies, false);
 });
+
+test('fresh installs do not add a hidden collection folder', () => {
+  assert.equal(engine.getStatus().collection, '');
+});

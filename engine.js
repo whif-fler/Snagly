@@ -68,7 +68,7 @@ const emptyState = () => ({
   useCookies: false,
   format: 'mp3',
   isVideo: false,
-  collection: 'Worship Pad',
+  collection: '',
   root: path.join(os.homedir(), 'Music'),
   createdAt: new Date().toISOString()
 });
@@ -209,6 +209,9 @@ function applyLoadedState(parsed) {
   if (typeof state.root !== 'string' || !path.isAbsolute(state.root)) {
     state.root = path.join(os.homedir(), 'Music');
   }
+  // The old placeholder collection was never exposed in the UI. Clear it so a
+  // fresh library lands in <save folder>\<playlist> as documented.
+  if (state.collection === 'Worship Pad') state.collection = '';
   for (const job of state.jobs) {
     if (job.status === 'running' || job.status === 'queued') job.status = 'queued';
     for (const t of job.tracks || []) {
@@ -382,7 +385,16 @@ async function extractPlaylist(url) {
     r = await runProcess(tools.yt, args, 120000);
     if (r.code === 0) break;
   }
-  if (r.code !== 0) return { error: (r.stderr || '').trim().slice(-600) };
+  if (r.code !== 0) {
+    const stderr = String(r.stderr || '').trim();
+    if (/could not copy chrome cookie|cookie database/i.test(stderr)) {
+      return { error: 'Browser cookies are locked because the browser is running. Close the browser and try again, or turn off browser sign-in.' };
+    }
+    if (/sign in to confirm|not a bot/i.test(stderr)) {
+      return { error: 'YouTube asked for a sign-in check. Turn on browser sign-in in the composer and try again.' };
+    }
+    return { error: stderr.slice(-600) };
+  }
   const parsed = parseExtraction(r.stdout, url);
   if (!parsed.error) {
     parsed.cachedAt = Date.now();
@@ -906,7 +918,11 @@ async function readTags(file) {
       ['-v', 'quiet', '-print_format', 'json', '-show_format', file],
       { encoding: 'utf8', maxBuffer: 1e7, timeout: 30000, windowsHide: true }
     );
-    return safeJsonParse(stdout)?.format?.tags || {};
+    const raw = safeJsonParse(stdout)?.format?.tags || {};
+    // MP3/FLAC usually report lowercase keys; Matroska/WebM reports uppercase.
+    const tags = {};
+    for (const [key, value] of Object.entries(raw)) tags[String(key).toLowerCase()] = value;
+    return tags;
   } catch { return {}; }
 }
 
@@ -996,10 +1012,7 @@ async function processTrack(job, track) {
   const locate = () => findTrackFile(job.folder, track.index, job.pad || 2, job.single, track.id, ext);
   let file = locate();
   if (result.code !== 0 && !file && useCookies) {
-    if (/could not copy chrome cookie|cookie database/i.test(result.stderr)) {
-      state.useCookies = false;
-      saveState();
-    }
+    const cookiesLocked = /could not copy chrome cookie|cookie database/i.test(result.stderr);
     const retryParser = trackProgressParser(track);
     const rebuilt = buildArgs(job, track, false);
     result = await runProcess(tools.yt, rebuilt.args, 600000, retryParser, track.id);
@@ -1008,7 +1021,12 @@ async function processTrack(job, track) {
     file = locate();
     if (!track.cookieWarning) {
       track.cookieWarning = true;
-      emit({ type: 'notice', message: 'Browser cookies were unavailable. Continuing without browser sign-in.' });
+      emit({
+        type: 'notice',
+        message: cookiesLocked
+          ? 'Browser cookies were locked (is the browser running?). Continuing without browser sign-in.'
+          : 'Browser cookies were unavailable. Continuing without browser sign-in.'
+      });
     }
   }
 

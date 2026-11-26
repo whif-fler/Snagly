@@ -42,6 +42,7 @@ There is no npm install and no build step.
 
 **Library**
 - Every playlist becomes a folder named after the playlist title
+- Single videos land in a `Singles` subfolder
 - Tracks are numbered `01 - Title.mp3`; single videos keep `Title [id]`
 - Cover art, title, artist and album embedded into each file
 - Filmstrip library with search, status filter and sorting
