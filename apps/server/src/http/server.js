@@ -226,7 +226,10 @@ function createHttpServer(app) {
     if (method === 'GET' && pathname === '/api/thumb') {
       if (!security.rateLimit(req, res, 'thumb', 600, 60_000, userId)) return;
       try {
-        const thumb = await fetchThumbnail(searchParams.get('u'), { cacheDir: config.thumbDir });
+        const thumb = await fetchThumbnail(searchParams.get('u'), {
+          cacheDir: config.thumbDir,
+          maxBytes: config.thumbCacheBytes
+        });
         security.headers(res);
         res.setHeader('Content-Type', thumb.contentType);
         res.setHeader('Cache-Control', 'private, max-age=86400');

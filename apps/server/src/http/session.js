@@ -12,7 +12,7 @@ function readJsonBody(req, limit) {
       .split(';')[0]
       .trim()
       .toLowerCase();
-    if (type && type !== 'application/json') {
+    if (type !== 'application/json') {
       const err = new Error('Content-Type must be application/json');
       err.status = 415;
       return reject(err);

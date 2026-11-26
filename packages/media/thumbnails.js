@@ -7,7 +7,50 @@ const { parseThumbnailUrl } = require('../core');
 const { ensureDir } = require('../platform/fs');
 
 const MAX_BYTES = 5 * 1024 * 1024;
+const DEFAULT_CACHE_BYTES = 256 * 1024 * 1024;
+const PRUNE_EVERY = 20;
 const TIMEOUT_MS = 8000;
+let writesSincePrune = 0;
+
+/**
+ * Keep the thumbnail cache below a byte budget by deleting the oldest cached
+ * images first. Without this, an attacker could request many distinct (but
+ * allow-listed) image URLs and fill the data volume.
+ */
+function pruneCache(cacheDir, maxBytes = DEFAULT_CACHE_BYTES) {
+  let names;
+  try {
+    names = fs.readdirSync(cacheDir);
+  } catch {
+    return 0;
+  }
+  const files = [];
+  let total = 0;
+  for (const name of names) {
+    if (!/^[a-f0-9]{64}\.(jpg|png|webp|gif)$/.test(name)) continue;
+    const file = path.join(cacheDir, name);
+    try {
+      const stat = fs.statSync(file);
+      if (!stat.isFile()) continue;
+      files.push({ file, size: stat.size, mtimeMs: stat.mtimeMs });
+      total += stat.size;
+    } catch {}
+  }
+  if (total <= maxBytes) return 0;
+  files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  const target = Math.floor(maxBytes * 0.9);
+  let removed = 0;
+  for (const item of files) {
+    if (total <= target) break;
+    try {
+      fs.unlinkSync(item.file);
+      total -= item.size;
+      removed++;
+    } catch {}
+  }
+  return removed;
+}
+
 const EXT_BY_TYPE = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
@@ -20,7 +63,10 @@ const EXT_BY_TYPE = {
  * cache it by URL hash. Redirects are refused, SVG is refused, and the body is
  * capped so a malicious response cannot exhaust memory or disk.
  */
-async function fetchThumbnail(rawUrl, { cacheDir, fetchImpl = globalThis.fetch } = {}) {
+async function fetchThumbnail(
+  rawUrl,
+  { cacheDir, maxBytes = DEFAULT_CACHE_BYTES, fetchImpl = globalThis.fetch } = {}
+) {
   const url = parseThumbnailUrl(rawUrl);
   if (!url) {
     const err = new Error('Unsupported thumbnail URL');
@@ -91,7 +137,12 @@ async function fetchThumbnail(rawUrl, { cacheDir, fetchImpl = globalThis.fetch }
   const temp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(temp, Buffer.concat(chunks), { mode: 0o600 });
   fs.renameSync(temp, file);
+  writesSincePrune++;
+  if (writesSincePrune >= PRUNE_EVERY) {
+    writesSincePrune = 0;
+    pruneCache(cacheDir, maxBytes);
+  }
   return { file, contentType };
 }
 
-module.exports = { fetchThumbnail, EXT_BY_TYPE, MAX_BYTES };
+module.exports = { fetchThumbnail, pruneCache, EXT_BY_TYPE, MAX_BYTES, DEFAULT_CACHE_BYTES };

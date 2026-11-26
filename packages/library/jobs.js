@@ -19,6 +19,22 @@ const nowIso = () => new Date().toISOString();
 function createJobsService({ db, adapter, files, config, scheduler, signer, tools }) {
   const previewCache = new Map(); // `${userId}:${url}` -> { expires, value }
 
+  // Bound the in-memory preview cache. Expired entries are dropped first, then
+  // the oldest entries, so many users or many distinct links cannot grow it
+  // without limit.
+  function trimPreviewCache() {
+    const now = Date.now();
+    for (const [key, item] of previewCache) {
+      if (item.expires <= now) previewCache.delete(key);
+    }
+    const max = config.previewCacheMax || 500;
+    while (previewCache.size >= max) {
+      const oldest = previewCache.keys().next().value;
+      if (oldest === undefined) break;
+      previewCache.delete(oldest);
+    }
+  }
+
   function capabilities() {
     return require('../contracts').capabilitiesFor(config.mode);
   }
@@ -92,6 +108,7 @@ function createJobsService({ db, adapter, files, config, scheduler, signer, tool
             entries: meta.entries,
             formats: null
           };
+          trimPreviewCache();
           previewCache.set(cacheKey, { expires: Date.now() + config.previewCacheTtlMs, value });
           sources.push(value);
         } catch (err) {

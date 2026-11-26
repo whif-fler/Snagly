@@ -214,6 +214,39 @@ test('CSRF, origin, host and content-type protections', async (t) => {
   });
   assert.equal(wrongType.status, 415);
 
+  const missingType = await fetch(`${server.base}/api/preview`, {
+    method: 'POST',
+    headers: { cookie: session.cookie, 'x-csrf-token': session.csrfToken },
+    body: '{}'
+  });
+  assert.equal(missingType.status, 415);
+
+  const base = new URL(server.base);
+  const siblingPortOrigin = `http://${base.hostname}:${Number(base.port) + 1}`;
+  const siblingPort = await fetch(`${server.base}/api/preview`, {
+    method: 'POST',
+    headers: {
+      cookie: session.cookie,
+      'content-type': 'application/json',
+      'x-csrf-token': session.csrfToken,
+      origin: siblingPortOrigin
+    },
+    body: JSON.stringify({ urls: ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'] })
+  });
+  assert.equal(siblingPort.status, 403);
+
+  const allowedOrigin = await fetch(`${server.base}/api/preview`, {
+    method: 'POST',
+    headers: {
+      cookie: session.cookie,
+      'content-type': 'application/json',
+      'x-csrf-token': session.csrfToken,
+      origin: server.base
+    },
+    body: JSON.stringify({ urls: ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'] })
+  });
+  assert.equal(allowedOrigin.status, 200);
+
   const host = await rawRequest(server.base, {
     path: '/healthz',
     headers: { host: 'evil.example' }
@@ -254,7 +287,9 @@ test('download links are scoped, tamper-proof and expire with the job', async (t
   const tokenOnOtherJob = job.archiveUrl.replace(jobId, 'job_99999999-9999-9999-9999-999999999999');
   assert.equal((await fetch(`${server.base}${tokenOnOtherJob}`)).status, 403);
 
-  const tampered = track.downloadUrl.replace(/token=[^&]+/, (match) => `${match.slice(0, -1)}x`);
+  const originalToken = new URL(track.downloadUrl, server.base).searchParams.get('token');
+  const tamperedToken = `${originalToken.slice(0, -1)}${originalToken.endsWith('x') ? 'y' : 'x'}`;
+  const tampered = track.downloadUrl.replace(originalToken, tamperedToken);
   assert.equal((await fetch(`${server.base}${tampered}`)).status, 403);
 
   server.app.db

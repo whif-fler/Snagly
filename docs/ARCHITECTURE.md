@@ -123,6 +123,8 @@ The scheduler is in-process and uses SQLite as the source of truth.
 - Cleanup removes expired jobs and their directories, but skips any job with an
   active worker or in-flight delivery.
 - Sessions are pruned on the same cleanup interval.
+- The preview cache is bounded by entry count, and the thumbnail cache is pruned
+  by total size when new images are written.
 
 SQLite is single-node by design. Running more than one app replica against the
 same database would duplicate schedulers and is not supported.

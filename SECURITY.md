@@ -119,6 +119,7 @@ cross-site` is rejected.
   `www.youtube.com` are accepted, over HTTPS, without credentials or custom ports.
 - Thumbnails are limited to an allow-list of Google/YouTube image hosts, fetched
   without redirects, with an 8-second timeout, a 5 MB cap and image-only types.
+  The on-disk thumbnail cache is byte-capped and prunes oldest files first.
 - Folder names and filenames are sanitised for Windows and POSIX, length-limited,
   and stripped of control characters and path separators.
 - File paths are resolved and checked with `isPathInside`; user and job IDs are
@@ -142,6 +143,8 @@ cross-site` is rejected.
   size, archive size, job duration, request body, links per request and SSE
   connections per user.
 - Streaming ZIP output avoids buffering whole archives.
+- The in-memory preview cache is bounded by entry count; the thumbnail cache is
+  bounded by total bytes and evicts the oldest files.
 - Retention cleanup removes expired jobs and files, but skips active work.
 
 ### Secrets and dependencies
@@ -173,6 +176,7 @@ Findings that were fixed:
 | Cancellation        | Aborted work could still be marked done              | `updateTrackIfStatus(..., 'running')` and abort flags           |
 | Cleanup             | Expired active job could be deleted                  | Cleanup skips active jobs and in-flight deliveries              |
 | File delivery       | Whole ZIPs were buffered                             | Streaming ZIP writer with backpressure                          |
+| Resource exhaustion | Preview and thumbnail caches grew without bound      | Preview cache capped by entries; thumbnail cache pruned by size |
 | Info disclosure     | Server paths appeared in API payloads                | Serialisers emit `folder: null`, `file: null`, signed URLs only |
 | Secrets             | `.env`/SQLite could be committed                     | Expanded `.gitignore`; example file only                        |
 | Dependencies        | No lockfile/update policy                            | `package-lock.json`, Dependabot, CI audit via `npm ci`          |

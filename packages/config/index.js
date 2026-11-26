@@ -80,6 +80,8 @@ function loadConfig(env = process.env) {
     maxBodyBytes: envInt(env.SNAGLY_MAX_BODY_BYTES, 64 * 1024, { min: 1024, max: 1024 * 1024 }),
     maxLinksPerRequest: envInt(env.SNAGLY_MAX_LINKS, 20, { min: 1, max: 100 }),
     previewCacheTtlMs: envInt(env.SNAGLY_PREVIEW_CACHE_MINUTES, 15, { min: 1, max: 240 }) * 60 * 1000,
+    previewCacheMax: envInt(env.SNAGLY_PREVIEW_CACHE_ENTRIES, 500, { min: 50, max: 5000 }),
+    thumbCacheBytes: envInt(env.SNAGLY_THUMB_CACHE_MB, 256, { min: 16, max: 4096 }) * 1024 * 1024,
     downloadTokenTtlMs: envInt(env.SNAGLY_DOWNLOAD_TOKEN_MINUTES, 10, { min: 1, max: 120 }) * 60 * 1000,
     downloadSecret: env.SNAGLY_DOWNLOAD_SECRET || '',
     maxSsePerUser: envInt(env.SNAGLY_MAX_SSE, 3, { min: 1, max: 20 }),

@@ -58,10 +58,12 @@ function createSecurity({ config }) {
       return false;
     }
     if (config.publicOrigin && origin === config.publicOrigin) return true;
-    const host = hostnameOf(req.headers.host);
-    return (
-      parsed.hostname.toLowerCase() === host && (parsed.protocol === 'https:' || parsed.protocol === 'http:')
-    );
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    const requestHost = String(req.headers.host || '').toLowerCase();
+    if (!requestHost) return false;
+    // Compare the full authority (host and port), not just the hostname, so a
+    // sibling service on another port of the same host cannot forge an Origin.
+    return parsed.host.toLowerCase() === requestHost;
   }
 
   function clientIp(req) {
