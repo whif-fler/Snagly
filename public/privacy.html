@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#F5F5F7">
+  <meta name="description" content="How Snagly handles your data: local-only storage, no tracking, and optional browser sign-in.">
+  <title>Privacy — Snagly</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/assets/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="policy-page">
+  <header class="policy-head">
+    <a class="policy-brand" href="/">
+      <img src="/assets/icon.svg" alt="" width="28" height="28">
+      <span>Snagly</span>
+    </a>
+    <a class="quiet-button" href="/">Back to Snagly</a>
+  </header>
+
+  <main class="policy">
+    <p class="policy-eyebrow">Privacy</p>
+    <h1>Your library never leaves your computer</h1>
+    <p class="policy-lede">
+      Snagly is local software. It runs a small server on this PC, stores its
+      records next to the app, and sends nothing to the developer.
+    </p>
+    <p class="policy-date">Last updated 27 November 2026</p>
+
+    <div class="policy-summary">
+      <ul>
+        <li>No account, no cloud, no analytics, no telemetry, no ads.</li>
+        <li>Snagly sets no cookies and has no login session.</li>
+        <li>Traffic goes only to YouTube/Google, and only for links you paste.</li>
+        <li>Browser sign-in is optional and can be turned off at any time.</li>
+      </ul>
+    </div>
+
+    <h2>What stays on this computer</h2>
+    <div class="policy-table-wrap">
+      <table class="policy-table">
+        <thead>
+          <tr><th>Location</th><th>Contents</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>data/state.json</code></td>
+            <td>Playlist and track titles, artist names, file paths, sizes, timestamps, status, settings</td>
+            <td>Keeps the library across restarts and skips tracks already on disk</td>
+          </tr>
+          <tr>
+            <td><code>data/state.backup.json</code></td>
+            <td>The previous state file</td>
+            <td>Recovery if a save is interrupted</td>
+          </tr>
+          <tr>
+            <td><code>data/cache/</code></td>
+            <td>Playlist metadata and available format lists</td>
+            <td>Avoids re-querying YouTube while you type</td>
+          </tr>
+          <tr>
+            <td>Your save folder</td>
+            <td>The downloaded audio/video files and their embedded tags</td>
+            <td>That is the output you asked for</td>
+          </tr>
+          <tr>
+            <td>Browser <code>localStorage</code></td>
+            <td>Theme choice and whether you answered the sign-in prompt</td>
+            <td>Remembers UI preferences</td>
+          </tr>
+          <tr>
+            <td><code>%TEMP%</code></td>
+            <td>Short-lived files while tags are rewritten</td>
+            <td>Deleted right after each write</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <code>data/</code> is plain JSON, not encrypted, and is excluded from Git.
+      Anyone with access to your Windows account can read it.
+    </p>
+
+    <h2>What leaves this computer</h2>
+    <div class="policy-table-wrap">
+      <table class="policy-table">
+        <thead>
+          <tr><th>Destination</th><th>What is sent</th><th>When</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>YouTube / Google</td>
+            <td>The link you paste, your IP address, normal HTTP metadata, and — only with browser sign-in on — your YouTube cookies</td>
+            <td>When you preview or download</td>
+          </tr>
+          <tr>
+            <td><code>i.ytimg.com</code></td>
+            <td>A normal image request from your browser, including your IP address</td>
+            <td>When thumbnails or cover art are shown</td>
+          </tr>
+          <tr>
+            <td>GitHub</td>
+            <td>A normal web request</td>
+            <td>Only if you click a repository link</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Nothing is sent to the developer: no usage data, no crash reports, no identifiers.</p>
+
+    <h2>Cookies and browser sign-in</h2>
+    <p>
+      Snagly does not set cookies. There is no <code>Set-Cookie</code> header, no
+      account, and no server-side session.
+    </p>
+    <p>
+      The <strong>Use browser sign-in</strong> toggle is different. YouTube often
+      asks for a "confirm you're not a bot" check. To get past it, the local
+      <code>yt-dlp</code> tool can read the YouTube cookies already saved in your
+      Chrome, Edge or Firefox profile. Those cookies:
+    </p>
+    <ul>
+      <li>are read on this computer, by <code>yt-dlp</code>;</li>
+      <li>are used only for YouTube requests;</li>
+      <li>are never written into <code>data/state.json</code> or exported history;</li>
+      <li>are never sent to the developer or any party other than Google.</li>
+    </ul>
+    <p>
+      Snagly asks once on first visit whether to enable this. It stays off until
+      you say yes. You can change it at any time in the composer footer. If the
+      browser cookie database is locked, the download continues without cookies
+      and Snagly tells you.
+    </p>
+
+    <h2>No tracking</h2>
+    <p>
+      Snagly contains no analytics, advertising, crash reporting, fingerprinting,
+      or third-party fonts and scripts. Inter is served from this app's own
+      <code>public/assets/fonts/</code> folder, and the Content-Security-Policy
+      blocks everything else.
+    </p>
+
+    <h2>Deleting your data</h2>
+    <div class="policy-table-wrap">
+      <table class="policy-table">
+        <thead>
+          <tr><th>To delete</th><th>Do this</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>History and settings</td><td>Close Snagly and delete the <code>data/</code> folder</td></tr>
+          <tr><td>Cache only</td><td>Use <strong>Clear cache</strong>, or delete <code>data/cache/</code></td></tr>
+          <tr><td>Downloaded media</td><td>Delete the files in your save folder</td></tr>
+          <tr><td>Browser preferences</td><td>Clear site data for this address in your browser</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Third parties</h2>
+    <ul>
+      <li><strong>YouTube / Google</strong> — source of the media and the recipient of your requests. Google's privacy policy applies to them.</li>
+      <li><strong>yt-dlp</strong> and <strong>FFmpeg</strong> — local tools installed through winget. They run on this machine.</li>
+      <li><strong>GitHub</strong> — only if you visit the repository.</li>
+    </ul>
+    <p>Snagly is not affiliated with YouTube or Google.</p>
+
+    <h2>Children's privacy</h2>
+    <p>
+      Snagly collects no personal information from anyone, including children,
+      because it does not collect personal information at all.
+    </p>
+
+    <h2>Security</h2>
+    <p>
+      The server listens only on <code>127.0.0.1</code>, validates <code>Host</code>
+      and <code>Origin</code>, accepts only JSON request bodies, restricts links
+      to YouTube, and limits file operations to your library folder.
+    </p>
+
+    <h2>Changes</h2>
+    <p>
+      If data handling changes, this page and the repository's
+      <code>PRIVACY.md</code> are updated in the same commit. The date at the top
+      reflects the current version.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      Questions or corrections:
+      <a href="https://github.com/whif-fler/Snagly/issues" target="_blank" rel="noopener">open an issue</a>.
+    </p>
+
+    <h2>Legal note</h2>
+    <p>
+      Downloading content may be restricted by YouTube's Terms of Service and by
+      copyright law where you live. Snagly does not grant rights to any content.
+      You are responsible for what you download and how you use it.
+    </p>
+  </main>
+
+  <footer class="policy-foot">
+    <a href="/">Snagly</a>
+    <span>Local-only. Nothing is uploaded.</span>
+  </footer>
+
+  <script src="/privacy.js"></script>
+</body>
+</html>

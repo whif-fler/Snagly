@@ -186,6 +186,7 @@ function serveStatic(req, res, pathname) {
   }
   if (relative === '/') relative = 'index.html';
   else relative = relative.replace(/^\/+/, '');
+  if (relative === 'privacy') relative = 'privacy.html';
   if (relative.includes('\0')) return sendJson(res, 400, { error: 'Bad path' });
 
   const filePath = path.resolve(PUBLIC_DIR, relative);

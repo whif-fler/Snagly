@@ -164,7 +164,7 @@ function renderSettings() {
     ui.cookieToggle.closest('.cookie-toggle')?.classList.toggle('disabled', !status.tools?.browser);
   }
   ui.hint.textContent = status.tools?.yt && status.tools?.ffmpeg
-    ? 'Runs on this computer. Only download audio you have rights to.'
+    ? 'Runs on this computer — nothing is uploaded. Only download audio you have rights to.'
     : 'Downloader tools were not found. Check the README for setup.';
 }
 
@@ -958,6 +958,26 @@ async function postSettings(patch) {
   } catch (err) { toast(err.message, 'error'); }
 }
 
+// Ask once per browser profile before the first yt-dlp run that may read the
+// user's YouTube cookies. The choice is stored locally and can be changed in
+// the composer at any time.
+async function maybeAskCookieChoice() {
+  if (!status?.tools?.browser) return;
+  if (localStorage.getItem('snagly-cookie-choice')) return;
+  const useCookies = await askConfirm({
+    title: 'Use browser sign-in?',
+    message: 'YouTube sometimes asks for a sign-in check. Snagly can let the local yt-dlp tool read the YouTube cookies already saved in this browser, on this computer. The cookies are used only for YouTube requests — they are never saved in Snagly\'s history and never sent to the developer. You can change this at any time. See Privacy for details.',
+    confirmLabel: 'Use sign-in',
+    cancelLabel: 'No thanks'
+  });
+  localStorage.setItem('snagly-cookie-choice', '1');
+  await postSettings({ useCookies });
+  if (ui.cookieToggle) ui.cookieToggle.checked = useCookies;
+  toast(useCookies
+    ? 'Browser sign-in enabled. Change it any time in the composer.'
+    : 'Browser sign-in off. Snagly will download without cookies.');
+}
+
 ui.download.addEventListener('click', startDownload);
 ui.selectionDownload.addEventListener('click', startDownload);
 ui.urls.addEventListener('keydown', event => {
@@ -1696,7 +1716,10 @@ initLibraryMenu();
 buildWave();
 loadFormats();
 loadVideoFormats();
-refresh().then(applyMode);
+refresh().then(() => {
+  applyMode();
+  maybeAskCookieChoice();
+});
 connectEvents();
 setInterval(() => { refresh(); }, 3000);
 // Re-check the moment the tab regains focus (e.g. after deleting folders in Explorer).

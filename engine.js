@@ -65,7 +65,7 @@ const emptyState = () => ({
   manifest: {},
   paused: false,
   workers: 5,
-  useCookies: true,
+  useCookies: false,
   format: 'mp3',
   isVideo: false,
   collection: 'Worship Pad',

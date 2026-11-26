@@ -92,3 +92,7 @@ test('prepareRoot creates and accepts an absolute directory', t => {
   assert.equal(prepareRoot(dir), path.normalize(dir));
   assert.equal(fs.existsSync(dir), true);
 });
+
+test('fresh installs keep browser cookies off until the user opts in', () => {
+  assert.equal(engine.getStatus().useCookies, false);
+});

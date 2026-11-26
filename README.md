@@ -15,6 +15,7 @@
   <img alt="Windows" src="https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white">
   <img alt="No npm dependencies" src="https://img.shields.io/badge/dependencies-none-5E5CE6">
   <img alt="Local only" src="https://img.shields.io/badge/runs-100%25%20locally-1D1D1F">
+  <img alt="Privacy" src="https://img.shields.io/badge/privacy-no%20tracking-1D1D1F">
 </p>
 
 <p align="center">
@@ -56,8 +57,8 @@ There is no npm install and no build step.
 
 **Small things**
 - Light and dark themes
-- Browser sign-in cookies are reused automatically (Chrome, Edge or Firefox),
-  with a toggle in the composer to turn them off
+- Browser sign-in is optional and off until you allow it; Snagly asks once,
+  then remembers your choice in the composer (Chrome, Edge or Firefox)
 - Drag a link or drop selected text onto the link box
 - Desktop notification when a batch finishes while the tab is in the background
 - Friendly error messages for the usual YouTube sign-in checks
@@ -114,6 +115,25 @@ or edit their tags.
 
 Downloaded tracks are recorded in `data/state.json`, so adding the same playlist
 again skips anything that already exists.
+
+## Privacy
+
+Snagly has no account, no analytics, no telemetry and no developer server. It
+sets no cookies, and the only outbound requests are the YouTube links you paste
+(through `yt-dlp`) and YouTube thumbnails loaded by your browser.
+
+Browser sign-in is optional and off until you allow it. When enabled, `yt-dlp`
+reads the YouTube cookies already stored in your local Chrome, Edge or Firefox
+profile so it can get past "confirm you're not a bot" checks. Those cookies are
+used only for YouTube requests and are never written into Snagly's state or
+sent anywhere else. The composer toggle turns it on or off at any time, and
+Snagly asks once on first visit.
+
+Everything Snagly remembers lives in `data/` beside `server.js`: playlist and
+track titles, file paths, sizes, timestamps and settings. Delete that folder to
+erase it. Downloaded media stays in the folder you chose.
+
+The full policy is in [PRIVACY.md](PRIVACY.md) and in the app at `/privacy`.
 
 ## Tests
 
