@@ -29,8 +29,16 @@ const MAX_SSE_CLIENTS = 10;
 const MEDIA_FILE_RE = /\.(mp3|m4a|aac|flac|opus|ogg|oga|wav|webm|mp4|mkv|mov|m4v)$/i;
 
 const FORMATS = {
-  mp3: { ext: 'mp3', args: ['-x', '--audio-format', 'mp3', '--audio-quality', '320K'], label: 'MP3 320 kbps' },
-  mp3v0: { ext: 'mp3', args: ['-x', '--audio-format', 'mp3', '--audio-quality', 'V0'], label: 'MP3 V0 (VBR)' },
+  mp3: {
+    ext: 'mp3',
+    args: ['-x', '--audio-format', 'mp3', '--audio-quality', '320K'],
+    label: 'MP3 320 kbps'
+  },
+  mp3v0: {
+    ext: 'mp3',
+    args: ['-x', '--audio-format', 'mp3', '--audio-quality', 'V0'],
+    label: 'MP3 V0 (VBR)'
+  },
   flac: { ext: 'flac', args: ['-x', '--audio-format', 'flac'], label: 'FLAC (lossless)' },
   opus: { ext: 'opus', args: ['-x', '--audio-format', 'opus', '--audio-quality', '0'], label: 'Opus' },
   m4a: { ext: 'm4a', args: ['-x', '--audio-format', 'm4a', '--audio-quality', '0'], label: 'M4A / AAC' },
@@ -43,8 +51,8 @@ function videoArgs(height) {
   return [
     '-f',
     `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/` +
-    `bestvideo[height<=${height}]+bestaudio/` +
-    `best[height<=${height}][ext=mp4]/best[height<=${height}]`
+      `bestvideo[height<=${height}]+bestaudio/` +
+      `best[height<=${height}][ext=mp4]/best[height<=${height}]`
   ];
 }
 
@@ -57,8 +65,18 @@ const VIDEO_FORMATS = {
   '360p': { label: '360p MP4', args: videoArgs(360), merge: true, ext: 'mp4' },
   // Used when the source tops out below the smallest ladder rung. The label
   // is set by the client to the real source height.
-  source: { label: 'Source quality', args: ['-f', 'bestvideo+bestaudio[ext=m4a]/bestvideo+bestaudio/best'], merge: true, ext: 'mp4' },
-  best: { label: 'Best quality', args: ['-f', 'bestvideo+bestaudio[ext=m4a]/bestvideo+bestaudio/best'], merge: true, ext: 'mp4' }
+  source: {
+    label: 'Source quality',
+    args: ['-f', 'bestvideo+bestaudio[ext=m4a]/bestvideo+bestaudio/best'],
+    merge: true,
+    ext: 'mp4'
+  },
+  best: {
+    label: 'Best quality',
+    args: ['-f', 'bestvideo+bestaudio[ext=m4a]/bestvideo+bestaudio/best'],
+    merge: true,
+    ext: 'mp4'
+  }
 };
 
 const VIDEO_LADDER = [2160, 1440, 1080, 720, 480, 360];
@@ -86,38 +104,68 @@ const runningProcesses = new Map(); // trackId -> { child, kill }
 
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function emit(payload) {
   const line = `data: ${JSON.stringify(payload)}\n\n`;
   for (const res of listeners) {
-    try { res.write(line); } catch { listeners.delete(res); }
+    try {
+      res.write(line);
+    } catch {
+      listeners.delete(res);
+    }
   }
 }
 
 function broadcast(extra = {}) {
-  emit({ type: 'state', jobs: publicJobs(), paused: state.paused, workers: effectiveWorkers(), active: activeCount, penaltyMs, ...extra });
+  emit({
+    type: 'state',
+    jobs: publicJobs(),
+    paused: state.paused,
+    workers: effectiveWorkers(),
+    active: activeCount,
+    penaltyMs,
+    ...extra
+  });
 }
 
 function publicJobs() {
   if (!Array.isArray(state.jobs)) state.jobs = [];
-  return state.jobs.map(j => ({
-    id: j.id, url: j.url, playlistId: j.playlistId, title: j.title,
-    thumb: j.thumb, folder: j.folder, status: j.status,
-    single: Boolean(j.single), isVideo: Boolean(j.isVideo), format: j.format || null,
-    createdAt: j.createdAt, finishedAt: j.finishedAt,
+  return state.jobs.map((j) => ({
+    id: j.id,
+    url: j.url,
+    playlistId: j.playlistId,
+    title: j.title,
+    thumb: j.thumb,
+    folder: j.folder,
+    status: j.status,
+    single: Boolean(j.single),
+    isVideo: Boolean(j.isVideo),
+    format: j.format || null,
+    createdAt: j.createdAt,
+    finishedAt: j.finishedAt,
     trackCount: j.tracks.length,
-    done: j.tracks.filter(t => t.status === 'done').length,
-    failed: j.tracks.filter(t => t.status === 'failed').length,
-    cancelled: j.tracks.filter(t => t.status === 'cancelled').length,
-    missing: j.tracks.filter(t => t.status === 'missing').length,
-    running: j.tracks.filter(t => t.status === 'running').length,
-    tracks: j.tracks.map(t => ({
-      index: t.index, id: t.id, title: t.title, artist: t.artist,
-      status: t.status, error: t.error, warning: t.warning || null, file: t.file, size: t.size,
-      phase: t.phase || null, progress: t.progress || 0,
-      downloaded: t.downloaded || 0, total: t.total || 0,
-      speed: t.speed || '', eta: t.eta ?? null
+    done: j.tracks.filter((t) => t.status === 'done').length,
+    failed: j.tracks.filter((t) => t.status === 'failed').length,
+    cancelled: j.tracks.filter((t) => t.status === 'cancelled').length,
+    missing: j.tracks.filter((t) => t.status === 'missing').length,
+    running: j.tracks.filter((t) => t.status === 'running').length,
+    tracks: j.tracks.map((t) => ({
+      index: t.index,
+      id: t.id,
+      title: t.title,
+      artist: t.artist,
+      status: t.status,
+      error: t.error,
+      warning: t.warning || null,
+      file: t.file,
+      size: t.size,
+      phase: t.phase || null,
+      progress: t.progress || 0,
+      downloaded: t.downloaded || 0,
+      total: t.total || 0,
+      speed: t.speed || '',
+      eta: t.eta ?? null
     }))
   }));
 }
@@ -141,9 +189,14 @@ function reconcileLibrary(force = false) {
   let removed = 0;
   const kept = [];
   for (const job of state.jobs) {
-    const active = job.status === 'running' || job.status === 'queued' ||
-      job.tracks.some(t => t.status === 'running' || t.status === 'queued');
-    if (active) { kept.push(job); continue; }
+    const active =
+      job.status === 'running' ||
+      job.status === 'queued' ||
+      job.tracks.some((t) => t.status === 'running' || t.status === 'queued');
+    if (active) {
+      kept.push(job);
+      continue;
+    }
 
     // Folder gone (whole playlist/single deleted from disk) -> drop the entry.
     if (!job.folder || !fs.existsSync(job.folder)) {
@@ -179,10 +232,10 @@ function reconcileLibrary(force = false) {
       }
       if (touched) {
         changed = true;
-        const done = job.tracks.filter(t => t.status === 'done').length;
-        const missing = job.tracks.filter(t => t.status === 'missing').length;
+        const done = job.tracks.filter((t) => t.status === 'done').length;
+        const missing = job.tracks.filter((t) => t.status === 'missing').length;
         if (job.status === 'done' || job.status === 'partial' || job.status === 'failed') {
-          if (!missing) job.status = done === job.tracks.length ? 'done' : (done > 0 ? 'partial' : job.status);
+          if (!missing) job.status = done === job.tracks.length ? 'done' : done > 0 ? 'partial' : job.status;
           else job.status = done > 0 ? 'partial' : 'failed';
         }
       }
@@ -241,7 +294,9 @@ function writeStateFile() {
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8');
   try {
     if (fs.existsSync(STATE_FILE)) fs.copyFileSync(STATE_FILE, STATE_BACKUP);
-  } catch { /* a missing backup must never block a save */ }
+  } catch {
+    /* a missing backup must never block a save */
+  }
   fs.renameSync(tmp, STATE_FILE);
 }
 
@@ -249,17 +304,29 @@ let saveTimer = null;
 function saveState() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try { writeStateFile(); } catch (err) { console.error('Snagly could not save state:', err.message); }
+    try {
+      writeStateFile();
+    } catch (err) {
+      console.error('Snagly could not save state:', err.message);
+    }
   }, 120);
 }
 
 function saveStateNow() {
   clearTimeout(saveTimer);
-  try { writeStateFile(); } catch (err) { console.error('Snagly could not save state:', err.message); }
+  try {
+    writeStateFile();
+  } catch (err) {
+    console.error('Snagly could not save state:', err.message);
+  }
 }
 
 function cookieSource() {
-  try { if (fs.existsSync(COOKIES_FILE)) return 'file'; } catch { /* ignore */ }
+  try {
+    if (fs.existsSync(COOKIES_FILE)) return 'file';
+  } catch {
+    /* ignore */
+  }
   return tools.browser ? 'browser' : null;
 }
 
@@ -284,7 +351,7 @@ function discoverTools() {
       }
       const ffmpegRoot = path.join(wingetRoot, entry.replace('yt-dlp.yt-dlp.', 'yt-dlp.FFmpeg.'));
       if (fs.existsSync(ffmpegRoot)) {
-        const walk = dir => {
+        const walk = (dir) => {
           for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
             const p = path.join(dir, item.name);
             if (item.isDirectory()) walk(p);
@@ -295,7 +362,9 @@ function discoverTools() {
         walk(ffmpegRoot);
       }
     }
-  } catch { /* handled by status endpoint */ }
+  } catch {
+    /* handled by status endpoint */
+  }
 
   const browsers = [
     ['chrome', path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'User Data')],
@@ -314,13 +383,17 @@ function killProcessTree(child) {
     try {
       spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
       return;
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
-  try { child.kill('SIGTERM'); } catch {}
+  try {
+    child.kill('SIGTERM');
+  } catch {}
 }
 
 function runProcess(exe, args, timeoutMs = 0, onStdout = null, trackId = null) {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     if (!exe) return resolve({ code: -1, stdout: '', stderr: 'Tool not found' });
     let stdout = '';
     let stderr = '';
@@ -330,7 +403,7 @@ function runProcess(exe, args, timeoutMs = 0, onStdout = null, trackId = null) {
     if (trackId) {
       runningProcesses.set(trackId, { child, kill: () => killProcessTree(child) });
     }
-    child.stdout.on('data', d => {
+    child.stdout.on('data', (d) => {
       const text = d.toString();
       if (stdout.length + text.length > MAX_PROCESS_OUTPUT) {
         oversized = true;
@@ -340,20 +413,31 @@ function runProcess(exe, args, timeoutMs = 0, onStdout = null, trackId = null) {
       stdout += text;
       if (onStdout) onStdout(text, false);
     });
-    child.stderr.on('data', d => {
+    child.stderr.on('data', (d) => {
       if (stderr.length < MAX_PROCESS_OUTPUT) stderr += d.toString();
     });
     let timer = null;
-    if (timeoutMs) timer = setTimeout(() => { try { killProcessTree(child); } catch {} }, timeoutMs);
+    if (timeoutMs)
+      timer = setTimeout(() => {
+        try {
+          killProcessTree(child);
+        } catch {}
+      }, timeoutMs);
     function cleanup() {
       if (trackId) runningProcesses.delete(trackId);
     }
-    child.on('error', err => {
-      if (done) return; done = true; clearTimeout(timer); cleanup();
+    child.on('error', (err) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      cleanup();
       resolve({ code: -1, stdout, stderr: stderr + '\n' + err.message });
     });
-    child.on('close', code => {
-      if (done) return; done = true; clearTimeout(timer); cleanup();
+    child.on('close', (code) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      cleanup();
       if (onStdout) onStdout('', true);
       if (oversized) {
         return resolve({ code: -1, stdout: '', stderr: 'Tool output exceeded the size limit' });
@@ -364,11 +448,12 @@ function runProcess(exe, args, timeoutMs = 0, onStdout = null, trackId = null) {
 }
 
 function sanitizeFolder(name) {
-  return String(name).replace(/[<>:"\/\\|?*\x00-\x1F]/g, '').replace(/[. ]+$/, '').trim() || 'Playlist';
-}
-
-function isSingleVideo(url) {
-  return /(?:youtube\.com\/watch\?|youtu\.be\/|youtube\.com\/shorts\/)/i.test(url) && !/[?&]list=/i.test(url);
+  return (
+    String(name)
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+      .replace(/[. ]+$/, '')
+      .trim() || 'Playlist'
+  );
 }
 
 async function extractPlaylist(url) {
@@ -392,9 +477,7 @@ async function extractPlaylist(url) {
   // and most public links do not need it. Try plain first, then sign in.
   const baseArgs = ['--flat-playlist', '--dump-single-json', '--no-warnings', '--skip-download', url];
   const extra = cookieArgs();
-  const attempts = extra.length
-    ? [baseArgs, [...baseArgs, ...extra]]
-    : [baseArgs];
+  const attempts = extra.length ? [baseArgs, [...baseArgs, ...extra]] : [baseArgs];
   let r;
   for (const args of attempts) {
     r = await runProcess(tools.yt, args, 120000);
@@ -403,17 +486,24 @@ async function extractPlaylist(url) {
   if (r.code !== 0) {
     const stderr = String(r.stderr || '').trim();
     if (/could not copy chrome cookie|cookie database/i.test(stderr)) {
-      return { error: 'Browser cookies are locked because the browser is running. Close the browser and try again, or add a cookies.txt file next to server.js.' };
+      return {
+        error:
+          'Browser cookies are locked because the browser is running. Close the browser and try again, or add a cookies.txt file next to server.js.'
+      };
     }
     if (/sign in to confirm|not a bot/i.test(stderr)) {
-      return { error: 'YouTube asked for a sign-in check. Turn on Use YouTube sign-in in the composer and try again.' };
+      return {
+        error: 'YouTube asked for a sign-in check. Turn on Use YouTube sign-in in the composer and try again.'
+      };
     }
     return { error: stderr.slice(-600) };
   }
   const parsed = parseExtraction(r.stdout, url);
   if (!parsed.error) {
     parsed.cachedAt = Date.now();
-    try { fs.writeFileSync(cacheFile, JSON.stringify(parsed, null, 2), 'utf8'); } catch {}
+    try {
+      fs.writeFileSync(cacheFile, JSON.stringify(parsed, null, 2), 'utf8');
+    } catch {}
   }
   return parsed;
 }
@@ -422,12 +512,10 @@ function parseExtraction(stdout, url = '') {
   try {
     const start = stdout.indexOf('{');
     const data = JSON.parse(stdout.slice(start));
-    const rawEntries = data.entries?.length
-      ? data.entries
-      : (data.id ? [data] : []);
+    const rawEntries = data.entries?.length ? data.entries : data.id ? [data] : [];
     const single = !data.entries?.length && Boolean(data.id);
     const entries = rawEntries
-      .filter(e => e && /^[A-Za-z0-9_-]{11}$/.test(String(e.id)))
+      .filter((e) => e && /^[A-Za-z0-9_-]{11}$/.test(String(e.id)))
       .slice(0, 5000)
       .map((e, i) => ({
         id: e.id,
@@ -438,14 +526,14 @@ function parseExtraction(stdout, url = '') {
       }));
     return {
       id: data.id || '',
-      title: single ? 'Single video' : (data.title || 'Untitled playlist'),
+      title: single ? 'Single video' : data.title || 'Untitled playlist',
       entries,
       thumb: entries[0]?.thumb || '',
       single,
       // A single video's metadata already contains the full format list, so
       // there is no need to spend a second yt-dlp call probing it.
       formats: single ? summarizeFormats(data.formats) : null,
-      originalTitle: single ? (data.title || '') : '',
+      originalTitle: single ? data.title || '' : '',
       originalUrl: url,
       cached: false
     };
@@ -469,12 +557,14 @@ function audioCodecLabel(codec) {
 
 function summarizeFormats(formats) {
   if (!Array.isArray(formats) || !formats.length) return null;
-  const video = formats.filter(f => f && f.vcodec && f.vcodec !== 'none' && Number(f.height) > 0);
-  const audio = formats.filter(f => f && f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none'));
+  const video = formats.filter((f) => f && f.vcodec && f.vcodec !== 'none' && Number(f.height) > 0);
+  const audio = formats.filter(
+    (f) => f && f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none')
+  );
   // `height` is the raw frame height: a 2:1 video labels 3840x1920 as 4K.
   // format_note carries the real quality tier ("2160p"), fall back to the
   // smaller dimension so portrait videos don't look taller than they are.
-  const tier = f => {
+  const tier = (f) => {
     const note = String(f.format_note || '').match(/(\d{3,4})p/);
     if (note) return Number(note[1]);
     const h = Number(f.height) || 0;
@@ -488,15 +578,17 @@ function summarizeFormats(formats) {
   }, null);
   return {
     maxHeight,
-    heights: VIDEO_LADDER.filter(h => h <= maxHeight),
+    heights: VIDEO_LADDER.filter((h) => h <= maxHeight),
     audio: bestAudio ? { kbps: Math.round(bestAudio.kbps), codec: bestAudio.codec } : null
   };
 }
 
 function probeKey(url) {
-  return (url.match(/[?&]list=([^&]+)/) || [])[1]
-    || (url.match(/(?:v=|youtu\.be\/|\/shorts\/)([\w-]{11})/) || [])[1]
-    || url;
+  return (
+    (url.match(/[?&]list=([^&]+)/) || [])[1] ||
+    (url.match(/(?:v=|youtu\.be\/|\/shorts\/)([\w-]{11})/) || [])[1] ||
+    url
+  );
 }
 
 function probeCacheFile(key) {
@@ -516,7 +608,9 @@ function readProbeCache(key) {
       probeCache.set(key, disk);
       return disk;
     }
-  } catch { /* no usable cache */ }
+  } catch {
+    /* no usable cache */
+  }
   return null;
 }
 
@@ -531,13 +625,16 @@ async function probeFormats(url) {
   if (hit) return hit.data;
 
   const baseArgs = [
-    '--playlist-items', '1', '--skip-download', '--no-warnings',
-    '--print', '%(formats)j', url
+    '--playlist-items',
+    '1',
+    '--skip-download',
+    '--no-warnings',
+    '--print',
+    '%(formats)j',
+    url
   ];
   const extra = cookieArgs();
-  const attempts = extra.length
-    ? [baseArgs, [...baseArgs, ...extra]]
-    : [baseArgs];
+  const attempts = extra.length ? [baseArgs, [...baseArgs, ...extra]] : [baseArgs];
   let r;
   for (const args of attempts) {
     r = await runProcess(tools.yt, args, 90000);
@@ -548,13 +645,15 @@ async function probeFormats(url) {
     return null;
   }
 
-  const line = r.stdout.split(/\r?\n/).find(l => l.trim().startsWith('['));
+  const line = r.stdout.split(/\r?\n/).find((l) => l.trim().startsWith('['));
   if (!line) {
     probeCache.set(key, { at: Date.now(), data: null });
     return null;
   }
   let formats;
-  try { formats = JSON.parse(line.trim()); } catch {
+  try {
+    formats = JSON.parse(line.trim());
+  } catch {
     probeCache.set(key, { at: Date.now(), data: null });
     return null;
   }
@@ -566,7 +665,9 @@ async function probeFormats(url) {
   }
   const entry = { at: Date.now(), data };
   probeCache.set(key, entry);
-  try { fs.writeFileSync(probeCacheFile(key), JSON.stringify(entry), 'utf8'); } catch {}
+  try {
+    fs.writeFileSync(probeCacheFile(key), JSON.stringify(entry), 'utf8');
+  } catch {}
   return data;
 }
 
@@ -589,7 +690,7 @@ async function mapLimit(items, limit, fn) {
 // Metadata only. Quality menus are filled by /api/probe so opening the track
 // picker never waits on a second yt-dlp round trip.
 async function previewSources(urls) {
-  const results = await mapLimit(urls, 2, async url => {
+  const results = await mapLimit(urls, 2, async (url) => {
     const meta = await extractPlaylist(url);
     return { url, meta, formats: meta.formats || null };
   });
@@ -609,7 +710,7 @@ async function previewSources(urls) {
       single: Boolean(meta.single),
       cached: Boolean(meta.cached),
       formats,
-      entries: meta.entries.map(e => ({ index: e.index, title: e.title, artist: e.artist }))
+      entries: meta.entries.map((e) => ({ index: e.index, title: e.title, artist: e.artist }))
     });
   }
   return { sources, errors };
@@ -633,7 +734,9 @@ async function createJobs(inputs, options = {}) {
   const isVideo = Boolean(options.isVideo);
   const allowDuplicate = Boolean(options.allowDuplicate);
   const base = collection ? path.join(root, sanitizeFolder(collection)) : root;
-  const items = inputs.slice(0, 50).map(input => typeof input === 'string' ? { url: input, selected: null } : input);
+  const items = inputs
+    .slice(0, 50)
+    .map((input) => (typeof input === 'string' ? { url: input, selected: null } : input));
   const created = [];
   const errors = [];
 
@@ -649,8 +752,10 @@ async function createJobs(inputs, options = {}) {
     }
     let entries = meta.entries;
     if (Array.isArray(selected) && selected.length) {
-      const wanted = new Set(selected.map(Number).filter(n => Number.isInteger(n) && n >= 1 && n <= 100000));
-      entries = entries.filter(e => wanted.has(e.index));
+      const wanted = new Set(
+        selected.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 100000)
+      );
+      entries = entries.filter((e) => wanted.has(e.index));
       if (!entries.length) {
         errors.push({ url, error: 'None of those track numbers were found' });
         continue;
@@ -659,7 +764,7 @@ async function createJobs(inputs, options = {}) {
 
     // Duplicate detection: warn if this playlist (or single) is already queued/downloaded
     const dupKey = meta.single ? `single:${meta.id}` : `playlist:${meta.id}`;
-    const existing = state.jobs.find(j => {
+    const existing = state.jobs.find((j) => {
       const key = j.single ? `single:${j.playlistId}` : `playlist:${j.playlistId}`;
       return key === dupKey;
     });
@@ -676,7 +781,9 @@ async function createJobs(inputs, options = {}) {
       let suffix = 2;
       while (
         fs.existsSync(folder) &&
-        !state.jobs.some(j => j.playlistId === meta.id && j.folder && path.resolve(j.folder) === path.resolve(folder))
+        !state.jobs.some(
+          (j) => j.playlistId === meta.id && j.folder && path.resolve(j.folder) === path.resolve(folder)
+        )
       ) {
         folder = `${original} (${suffix++})`;
         if (suffix > 99) break;
@@ -686,22 +793,21 @@ async function createJobs(inputs, options = {}) {
     const pad = entries.length > 99 ? 3 : 2;
 
     const fmt = isVideo
-      ? (VIDEO_FORMATS[format] || VIDEO_FORMATS['1080p'])
-      : (FORMATS[format || 'mp3'] || FORMATS.mp3);
+      ? VIDEO_FORMATS[format] || VIDEO_FORMATS['1080p']
+      : FORMATS[format || 'mp3'] || FORMATS.mp3;
     const ext = fmt.ext ? `.${fmt.ext}` : '';
 
-    const tracks = entries.map(e => {
+    const tracks = entries.map((e) => {
       const existingFile = findTrackFile(folder, e.index, pad, meta.single, e.id, ext);
       const recorded = state.manifest[e.id];
       const recordedOk = Boolean(
-        recorded &&
-        recorded.file &&
-        fs.existsSync(recorded.file) &&
-        isPathInside(folder, recorded.file)
+        recorded && recorded.file && fs.existsSync(recorded.file) && isPathInside(folder, recorded.file)
       );
       const done = Boolean(existingFile || recordedOk);
       let size = 0;
-      try { if (existingFile) size = fs.statSync(path.join(folder, existingFile)).size; } catch {}
+      try {
+        if (existingFile) size = fs.statSync(path.join(folder, existingFile)).size;
+      } catch {}
       return {
         id: e.id,
         index: e.index,
@@ -722,7 +828,7 @@ async function createJobs(inputs, options = {}) {
       id: `j_${randomUUID().slice(0, 8)}`,
       url,
       playlistId: meta.id,
-      title: meta.single ? (meta.originalTitle || meta.title) : meta.title,
+      title: meta.single ? meta.originalTitle || meta.title : meta.title,
       albumTag: meta.single ? 'Singles' : meta.title,
       single: Boolean(meta.single),
       thumb: meta.thumb,
@@ -737,7 +843,7 @@ async function createJobs(inputs, options = {}) {
     };
 
     // If every track is already on disk, mark the job done immediately instead of leaving it stuck on 'queued'
-    if (job.tracks.length && job.tracks.every(t => t.status === 'done')) {
+    if (job.tracks.length && job.tracks.every((t) => t.status === 'done')) {
       job.status = 'done';
       job.finishedAt = new Date().toISOString();
     }
@@ -752,7 +858,7 @@ async function createJobs(inputs, options = {}) {
   broadcast();
   saveState();
   pump();
-  return { created: publicJobs().filter(j => created.some(c => c.id === j.id)), errors };
+  return { created: publicJobs().filter((j) => created.some((c) => c.id === j.id)), errors };
 }
 
 function mediaMatcher(ext) {
@@ -764,10 +870,14 @@ function findTrackFile(folder, index, pad = 2, single = false, id = '', ext = '.
   const matcher = mediaMatcher(ext);
   if (single && id) {
     try {
-      return fs.readdirSync(folder).find(f =>
-        f.includes(`[${id}]`) && !f.endsWith('.part') && matcher.test(f)
-      ) || null;
-    } catch { return null; }
+      return (
+        fs
+          .readdirSync(folder)
+          .find((f) => f.includes(`[${id}]`) && !f.endsWith('.part') && matcher.test(f)) || null
+      );
+    } catch {
+      return null;
+    }
   }
   return findExisting(folder, index, pad, ext);
 }
@@ -775,14 +885,18 @@ function findTrackFile(folder, index, pad = 2, single = false, id = '', ext = '.
 function findExisting(folder, index, pad = 2, ext = '.mp3') {
   try {
     const matcher = mediaMatcher(ext);
-    const files = fs.readdirSync(folder).filter(f => !f.endsWith('.part') && !f.endsWith('.ytdl') && matcher.test(f));
+    const files = fs
+      .readdirSync(folder)
+      .filter((f) => !f.endsWith('.part') && !f.endsWith('.ytdl') && matcher.test(f));
     for (const width of [pad, 2, 3]) {
       const prefix = `${String(index).padStart(width, '0')} - `;
-      const found = files.find(f => f.startsWith(prefix));
+      const found = files.find((f) => f.startsWith(prefix));
       if (found) return found;
     }
     return null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function noteThrottle(stderr) {
@@ -801,7 +915,7 @@ function effectiveWorkers() {
 function nextTrack() {
   for (const job of state.jobs) {
     if (!['queued', 'running'].includes(job.status)) continue;
-    const track = job.tracks.find(t => t.status === 'queued');
+    const track = job.tracks.find((t) => t.status === 'queued');
     if (track) return { job, track };
   }
   return null;
@@ -833,7 +947,7 @@ function pump() {
   if (activeCount === 0 && !nextTrack()) {
     // Safety net: finalize any jobs whose tracks are all done but status never flipped
     for (const job of state.jobs) {
-      if (job.status === 'queued' && job.tracks.length && job.tracks.every(t => t.status === 'done')) {
+      if (job.status === 'queued' && job.tracks.length && job.tracks.every((t) => t.status === 'done')) {
         job.status = 'done';
         job.finishedAt = new Date().toISOString();
       }
@@ -845,8 +959,8 @@ function pump() {
 function buildArgs(job, track, withCookies) {
   const isVideo = Boolean(job.isVideo);
   const fmt = isVideo
-    ? (VIDEO_FORMATS[job.format || '720p'] || VIDEO_FORMATS['720p'])
-    : (FORMATS[job.format || 'mp3'] || FORMATS.mp3);
+    ? VIDEO_FORMATS[job.format || '720p'] || VIDEO_FORMATS['720p']
+    : FORMATS[job.format || 'mp3'] || FORMATS.mp3;
   const ext = fmt.ext ? `.${fmt.ext}` : '.%(ext)s';
   const name = job.single
     ? `%(title)s [%(id)s]${ext}`
@@ -855,10 +969,15 @@ function buildArgs(job, track, withCookies) {
   const args = [
     ...fmt.args,
     ...(isVideo ? ['--merge-output-format', 'mp4'] : []),
-    '--embed-thumbnail', '--embed-metadata',
-    '--no-playlist', '--continue', '--ignore-errors',
-    '--progress-template', 'PROGRESS|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.speed)s|%(progress.eta)s',
-    '-o', outTemplate,
+    '--embed-thumbnail',
+    '--embed-metadata',
+    '--no-playlist',
+    '--continue',
+    '--ignore-errors',
+    '--progress-template',
+    'PROGRESS|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.speed)s|%(progress.eta)s',
+    '-o',
+    outTemplate,
     `https://www.youtube.com/watch?v=${track.id}`
   ];
   if (withCookies) args.push(...cookieArgs());
@@ -918,13 +1037,21 @@ function trackProgressParser(track) {
 
 function friendlyError(stderr) {
   const text = String(stderr || '').trim();
-  if (/could not copy chrome cookie|cookie database/i.test(text)) return 'Browser cookies were locked; try without browser sign-in';
+  if (/could not copy chrome cookie|cookie database/i.test(text))
+    return 'Browser cookies were locked; try without browser sign-in';
   if (/sign in to confirm|not a bot/i.test(text)) return 'YouTube asked for a sign-in check';
   if (/private video/i.test(text)) return 'Video is private';
   if (/account associated with this video has been terminated/i.test(text)) return 'Uploader account is gone';
   if (/video unavailable/i.test(text)) return 'Video is unavailable';
   if (/http error 429|too many requests/i.test(text)) return 'YouTube throttled this request';
-  return (text.split('\n').filter(l => /error/i.test(l)).pop() || 'Download failed').trim().slice(0, 120);
+  return (
+    text
+      .split('\n')
+      .filter((l) => /error/i.test(l))
+      .pop() || 'Download failed'
+  )
+    .trim()
+    .slice(0, 120);
 }
 
 async function readTags(file) {
@@ -939,14 +1066,26 @@ async function readTags(file) {
     const tags = {};
     for (const [key, value] of Object.entries(raw)) tags[String(key).toLowerCase()] = value;
     return tags;
-  } catch { return {}; }
+  } catch {
+    return {};
+  }
 }
 
 function normalizeArtist(raw, fallback) {
   let artist = String(raw || '').trim();
   if (!artist) return fallback || 'Unknown';
-  const parts = [...new Set(artist.split(/\s*,\s*/).map(s => s.trim()).filter(Boolean))];
-  artist = parts.join(', ').replace(/\s*-\s*Topic$/i, '').trim();
+  const parts = [
+    ...new Set(
+      artist
+        .split(/\s*,\s*/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  ];
+  artist = parts
+    .join(', ')
+    .replace(/\s*-\s*Topic$/i, '')
+    .trim();
   if (!artist || artist.length > 64) artist = parts[0] || fallback || 'Unknown';
   return artist;
 }
@@ -968,8 +1107,24 @@ async function writeTags(file, tags) {
   try {
     await execFileAsync(
       tools.ffmpeg,
-      ['-y', '-v', 'error', '-i', file, '-f', 'ffmetadata', '-i', metaFile,
-        '-map', '0', '-map_metadata', '1', '-c', 'copy', outFile],
+      [
+        '-y',
+        '-v',
+        'error',
+        '-i',
+        file,
+        '-f',
+        'ffmetadata',
+        '-i',
+        metaFile,
+        '-map',
+        '0',
+        '-map_metadata',
+        '1',
+        '-c',
+        'copy',
+        outFile
+      ],
       { timeout: 120000, windowsHide: true, maxBuffer: 1e7 }
     );
     fs.copyFileSync(outFile, file);
@@ -982,7 +1137,7 @@ async function writeTags(file, tags) {
 function isLibraryPath(target) {
   const resolved = path.resolve(String(target || ''));
   if (isPathInside(state.root, resolved)) return true;
-  return state.jobs.some(job => job.folder && isPathInside(job.folder, resolved));
+  return state.jobs.some((job) => job.folder && isPathInside(job.folder, resolved));
 }
 
 async function editTags(file, tags) {
@@ -1006,7 +1161,10 @@ function markCancelled(track) {
 }
 
 async function processTrack(job, track) {
-  if (track.cancelled) { markCancelled(track); return; }
+  if (track.cancelled) {
+    markCancelled(track);
+    return;
+  }
   if (penaltyMs) await sleep(penaltyMs);
   await sleep(120 + Math.floor(Math.random() * 220));
 
@@ -1021,7 +1179,10 @@ async function processTrack(job, track) {
   const built = buildArgs(job, track, useCookies);
   let result = await runProcess(tools.yt, built.args, 600000, onStdout, track.id);
   noteThrottle(result.stderr);
-  if (track.cancelled) { markCancelled(track); return; }
+  if (track.cancelled) {
+    markCancelled(track);
+    return;
+  }
 
   const fmt = built.fmt;
   const ext = fmt.ext ? `.${fmt.ext}` : '';
@@ -1033,7 +1194,10 @@ async function processTrack(job, track) {
     const rebuilt = buildArgs(job, track, false);
     result = await runProcess(tools.yt, rebuilt.args, 600000, retryParser, track.id);
     noteThrottle(result.stderr);
-    if (track.cancelled) { markCancelled(track); return; }
+    if (track.cancelled) {
+      markCancelled(track);
+      return;
+    }
     file = locate();
     if (!track.cookieWarning) {
       track.cookieWarning = true;
@@ -1058,7 +1222,10 @@ async function processTrack(job, track) {
   }
 
   if (result.code !== 0 && !file) {
-    if (track.cancelled) { markCancelled(track); return; }
+    if (track.cancelled) {
+      markCancelled(track);
+      return;
+    }
     if (track.retries < track.maxRetries) {
       track.retries++;
       track.status = 'queued';
@@ -1077,7 +1244,9 @@ async function processTrack(job, track) {
   if (!file) {
     track.status = 'failed';
     track.phase = 'failed';
-    track.error = isVideo ? 'yt-dlp finished but no video was written' : 'yt-dlp finished but no audio was written';
+    track.error = isVideo
+      ? 'yt-dlp finished but no video was written'
+      : 'yt-dlp finished but no audio was written';
     return;
   }
 
@@ -1105,7 +1274,9 @@ async function processTrack(job, track) {
     track.warning = `Tags skipped: ${err.message}`;
   }
 
-  try { track.size = fs.statSync(fullPath).size; } catch {}
+  try {
+    track.size = fs.statSync(fullPath).size;
+  } catch {}
   track.file = fullPath;
   track.completedAt = new Date().toISOString();
   track.status = 'done';
@@ -1114,17 +1285,26 @@ async function processTrack(job, track) {
   track.speed = '';
   track.eta = null;
   track.error = null;
-  state.manifest[track.id] = { file: fullPath, title: track.title, artist: track.artist, jobId: job.id, completedAt: new Date().toISOString() };
+  state.manifest[track.id] = {
+    file: fullPath,
+    title: track.title,
+    artist: track.artist,
+    jobId: job.id,
+    completedAt: new Date().toISOString()
+  };
 }
 
 function finalizeJob(job) {
-  if (job.tracks.every(t => t.status === 'done')) {
+  if (job.tracks.every((t) => t.status === 'done')) {
     job.status = 'done';
     job.finishedAt = new Date().toISOString();
-  } else if (job.tracks.some(t => t.status === 'done') && job.tracks.every(t => t.status === 'done' || t.status === 'failed')) {
+  } else if (
+    job.tracks.some((t) => t.status === 'done') &&
+    job.tracks.every((t) => t.status === 'done' || t.status === 'failed')
+  ) {
     job.status = 'partial';
     job.finishedAt = new Date().toISOString();
-  } else if (job.tracks.every(t => t.status === 'failed')) {
+  } else if (job.tracks.every((t) => t.status === 'failed')) {
     job.status = 'failed';
     job.finishedAt = new Date().toISOString();
   }
@@ -1145,7 +1325,7 @@ function resetTrack(track) {
 }
 
 function retryJob(jobId, trackId = null) {
-  const job = state.jobs.find(j => j.id === jobId);
+  const job = state.jobs.find((j) => j.id === jobId);
   if (!job) return false;
   let retried = 0;
   for (const t of job.tracks) {
@@ -1192,11 +1372,11 @@ function setIsVideo(value) {
 }
 
 function removeJob(jobId) {
-  const index = state.jobs.findIndex(j => j.id === jobId);
+  const index = state.jobs.findIndex((j) => j.id === jobId);
   if (index === -1) return 'missing';
   const job = state.jobs[index];
   // Never drop a job while a download is writing into its folder.
-  if (job.tracks.some(t => t.status === 'running')) return 'running';
+  if (job.tracks.some((t) => t.status === 'running')) return 'running';
   state.jobs.splice(index, 1);
   for (const t of job.tracks) {
     if (state.manifest[t.id]?.jobId === job.id) delete state.manifest[t.id];
@@ -1207,7 +1387,7 @@ function removeJob(jobId) {
 }
 
 function cancelJob(jobId) {
-  const job = state.jobs.find(j => j.id === jobId);
+  const job = state.jobs.find((j) => j.id === jobId);
   if (!job) return false;
 
   let cancelled = 0;
@@ -1215,7 +1395,10 @@ function cancelJob(jobId) {
     if (t.status === 'running' || t.status === 'queued') {
       t.cancelled = true;
       const proc = runningProcesses.get(t.id);
-      if (proc) { proc.kill(); runningProcesses.delete(t.id); }
+      if (proc) {
+        proc.kill();
+        runningProcesses.delete(t.id);
+      }
       markCancelled(t);
       cancelled++;
     }
@@ -1233,7 +1416,9 @@ function cancelJob(jobId) {
 
 function shutdown() {
   for (const proc of runningProcesses.values()) {
-    try { proc.kill(); } catch {}
+    try {
+      proc.kill();
+    } catch {}
   }
   runningProcesses.clear();
   if (libraryTimer) {
@@ -1293,9 +1478,16 @@ function addSSE(res) {
   res.write(': connected\n\n');
   broadcast();
   const heartbeat = setInterval(() => {
-    try { res.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      clearInterval(heartbeat);
+    }
   }, 15000);
-  res.on('close', () => { clearInterval(heartbeat); listeners.delete(res); });
+  res.on('close', () => {
+    clearInterval(heartbeat);
+    listeners.delete(res);
+  });
 }
 
 function getStatus() {
@@ -1341,14 +1533,16 @@ $di.SetAccessControl($acl)
 function restrictDataPermissions() {
   if (process.platform !== 'win32') return;
   try {
-    execFileSync('powershell.exe', [
-      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ACL_SCRIPT
-    ], {
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 20000,
-      env: { ...process.env, SNAGLY_ACL_PATH: DATA_DIR }
-    });
+    execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ACL_SCRIPT],
+      {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 20000,
+        env: { ...process.env, SNAGLY_ACL_PATH: DATA_DIR }
+      }
+    );
   } catch (err) {
     if (process.env.SNAGLY_DEBUG) {
       console.error('Snagly could not restrict data permissions:', err.stderr?.toString() || err.message);
@@ -1367,21 +1561,59 @@ function init() {
 }
 
 // Save state before an unhandled crash so the library isn't lost on restart.
-process.on('uncaughtException', err => {
-  try { console.error('Snagly uncaught exception:', err); saveStateNow(); } catch {}
+process.on('uncaughtException', (err) => {
+  try {
+    console.error('Snagly uncaught exception:', err);
+    saveStateNow();
+  } catch {}
   process.exit(1);
 });
 
-process.on('unhandledRejection', err => {
-  try { console.error('Snagly unhandled rejection:', err); saveStateNow(); } catch {}
+process.on('unhandledRejection', (err) => {
+  try {
+    console.error('Snagly unhandled rejection:', err);
+    saveStateNow();
+  } catch {}
 });
 
 module.exports = {
-  init, getStatus, createJobs, previewSources, probeFormats, publicJobs, addSSE, retryJob, setPaused,
-  setWorkers, setUseCookies, setIsVideo, removeJob, cancelJob, clearCache, getHistory, editTags,
-  saveStateNow, pump, shutdown, tools: () => tools, reconcileLibrary, isLibraryPath, prepareRoot,
-  dataDir: () => DATA_DIR, cookieSource,
+  init,
+  getStatus,
+  createJobs,
+  previewSources,
+  probeFormats,
+  publicJobs,
+  addSSE,
+  retryJob,
+  setPaused,
+  setWorkers,
+  setUseCookies,
+  setIsVideo,
+  removeJob,
+  cancelJob,
+  clearCache,
+  getHistory,
+  editTags,
+  saveStateNow,
+  pump,
+  shutdown,
+  tools: () => tools,
+  reconcileLibrary,
+  isLibraryPath,
+  prepareRoot,
+  dataDir: () => DATA_DIR,
+  cookieSource,
   formats: () => Object.entries(FORMATS).map(([k, v]) => ({ key: k, ...v })),
   videoFormats: () => Object.entries(VIDEO_FORMATS).map(([k, v]) => ({ key: k, ...v })),
-  _test: { sanitizeFolder, parseExtraction, findTrackFile, findExisting, buildArgs, prepareRoot, mediaMatcher, FORMATS, VIDEO_FORMATS }
+  _test: {
+    sanitizeFolder,
+    parseExtraction,
+    findTrackFile,
+    findExisting,
+    buildArgs,
+    prepareRoot,
+    mediaMatcher,
+    FORMATS,
+    VIDEO_FORMATS
+  }
 };

@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#F5F5F7" />
+    <meta
+      name="description"
+      content="How Snagly handles your data in local and self-hosted cloud modes."
+    />
+    <title>Privacy — Snagly</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="/assets/fonts/inter-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="policy-page">
+    <header class="policy-head">
+      <a class="policy-brand" href="/">
+        <img src="/assets/icon.svg" alt="" width="28" height="28" />
+        <span>Snagly</span>
+      </a>
+      <a class="quiet-button" href="/">Back to Snagly</a>
+    </header>
+
+    <main class="policy">
+      <p class="policy-eyebrow">Privacy</p>
+      <h1 id="policyTitle">Your library stays under your control</h1>
+      <p class="policy-lede" id="policyLede">
+        Snagly runs locally on your computer by default. This page explains both
+        the local app and the optional self-hosted cloud mode.
+      </p>
+      <p class="policy-date">Last updated 27 November 2026</p>
+
+      <div class="policy-summary" id="policySummary">
+        <ul>
+          <li>No account, no analytics, no telemetry, no ads.</li>
+          <li>Local mode stores everything on this computer and sets no cookies.</li>
+          <li>Cloud mode stores jobs and files on the server for a limited time.</li>
+          <li>Traffic goes only to YouTube/Google for links you paste.</li>
+        </ul>
+      </div>
+
+      <section id="localPrivacy">
+        <h2>Local mode</h2>
+        <p>
+          In local mode Snagly is software running on your Windows computer. It
+          listens on <code>127.0.0.1</code>, stores records in <code>data/</code>,
+          and writes media into the folder you choose. There is no Snagly account,
+          no cloud and no developer server.
+        </p>
+
+        <h3>What stays on this computer</h3>
+        <div class="policy-table-wrap">
+          <table class="policy-table">
+            <thead>
+              <tr>
+                <th>Location</th>
+                <th>Contents</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>data/state.json</code></td>
+                <td>
+                  Playlist and track titles, artists, file paths, sizes,
+                  timestamps, status, settings
+                </td>
+                <td>Keeps the library across restarts and skips existing tracks</td>
+              </tr>
+              <tr>
+                <td><code>data/cache/</code></td>
+                <td>Playlist metadata, format probes, thumbnail images</td>
+                <td>Avoids repeat requests and keeps the browser off Google</td>
+              </tr>
+              <tr>
+                <td>Your save folder</td>
+                <td>Downloaded media with embedded tags and art</td>
+                <td>The output you asked for</td>
+              </tr>
+              <tr>
+                <td>Browser <code>localStorage</code></td>
+                <td>Theme choice and sign-in prompt answer</td>
+                <td>Remembers UI preferences</td>
+              </tr>
+              <tr>
+                <td><code>cookies.txt</code> (optional)</td>
+                <td>A cookie export you place beside <code>server.js</code></td>
+                <td>Optional fallback for YouTube sign-in</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <code>data/</code> is plain JSON, not encrypted, and is excluded from
+          Git. On NTFS, Snagly restricts it to your Windows account (plus SYSTEM
+          and Administrators). Anyone who can sign in as you can read it.
+        </p>
+
+        <h3>What leaves this computer</h3>
+        <p>
+          The only requests are to YouTube/Google for links you paste, plus cover
+          art fetched by the local server from YouTube image hosts. Your browser
+          only connects to this computer. Nothing is sent to the developer.
+        </p>
+        <p>
+          <strong>YouTube sign-in</strong> is optional and off until you allow it.
+          When enabled, <code>yt-dlp</code> reads YouTube cookies from your local
+          Chrome, Edge or Firefox profile. They are used only for YouTube
+          requests, never written into state or history, and never sent to the
+          developer.
+        </p>
+        <p>
+          <strong>Export history</strong> creates a CSV only when you click the
+          button. It contains full file paths, which can reveal your Windows
+          username and folder layout. Review it before sharing.
+        </p>
+
+        <h3>Cookies</h3>
+        <p>
+          Local mode sets no cookies and has no login session. The sign-in toggle
+          controls <code>yt-dlp</code>'s use of your existing browser cookies; it
+          is not a Snagly session.
+        </p>
+
+        <h3>Deleting local data</h3>
+        <ul>
+          <li>Close Snagly and delete <code>data/</code> for history and settings.</li>
+          <li>Use <strong>Clear cache</strong> or delete <code>data/cache/</code> for thumbnails.</li>
+          <li>Delete files in your save folder for downloaded media.</li>
+          <li>Delete <code>cookies.txt</code> if you created one.</li>
+          <li>Clear site data for the local address to remove browser preferences.</li>
+        </ul>
+
+        <h3>Security</h3>
+        <p>
+          The local server listens only on <code>127.0.0.1</code>, validates
+          <code>Host</code> and <code>Origin</code>, accepts only JSON request
+          bodies, restricts links to YouTube, and limits file operations to your
+          library folder. Thumbnails are fetched by the server from a short
+          allow-list of YouTube image hosts with redirects disabled.
+        </p>
+      </section>
+
+      <section id="cloudPrivacy" hidden>
+        <h2>Self-hosted cloud mode</h2>
+        <p>
+          Cloud mode is software that an operator runs on a server. It provides
+          anonymous sessions, a per-user library and short-lived server-side
+          storage so you can save finished files to your device. The operator can
+          access the server and everything stored on it.
+        </p>
+
+        <h3>What the server stores</h3>
+        <div class="policy-table-wrap">
+          <table class="policy-table">
+            <thead>
+              <tr>
+                <th>Location</th>
+                <th>Contents</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>SQLite database</td>
+                <td>
+                  Anonymous user ID, hashed session tokens, CSRF tokens, job and
+                  track metadata, settings, timestamps
+                </td>
+                <td>Queue, library, ownership and progress</td>
+              </tr>
+              <tr>
+                <td>Per-user media folders</td>
+                <td>Downloaded audio/video files</td>
+                <td>Processing and signed delivery to your browser</td>
+              </tr>
+              <tr>
+                <td>Thumbnail cache</td>
+                <td>Cached cover images</td>
+                <td>Avoids repeat fetches and keeps the browser off Google</td>
+              </tr>
+              <tr>
+                <td>Session cookie</td>
+                <td>A random identifier in <code>snagly_sid</code></td>
+                <td>Keeps your library separate from other users</td>
+              </tr>
+              <tr>
+                <td>Browser storage</td>
+                <td>Theme, saved-track flags, optional folder handle</td>
+                <td>UI state and folder saving</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The database stores only a hash of the session token. Download links are
+          short-lived signed URLs; anyone who obtains one can use it until it
+          expires, so treat those links as secrets. The server operator can read
+          metadata, media files, logs and backups. If you are not the operator, ask
+          them about access and retention.
+        </p>
+
+        <h3>Retention and deletion</h3>
+        <ul>
+          <li>
+            Finished jobs and files expire after the configured retention period
+            (24 hours by default).
+          </li>
+          <li><strong>Remove</strong> deletes the server copy of a job immediately.</li>
+          <li>Sessions expire automatically; clearing site data removes your cookie.</li>
+          <li>The operator can delete the entire data volume; this is irreversible.</li>
+          <li>Backups may retain deleted data until the operator rotates them.</li>
+        </ul>
+
+        <h3>Cookies and YouTube</h3>
+        <p>
+          Cloud mode does <strong>not</strong> read personal browser cookies or a
+          <code>cookies.txt</code> file. The only Snagly cookie is the
+          <code>snagly_sid</code> session cookie, which is <code>HttpOnly</code>,
+          <code>SameSite=Lax</code> and <code>Secure</code> when HTTPS is enabled.
+          The server contacts YouTube and thumbnail hosts using its own IP address.
+          Your personal YouTube sign-in is not used.
+        </p>
+
+        <h3>What leaves the server</h3>
+        <p>
+          Requests go to YouTube/Google for links you paste and to YouTube image
+          hosts for cover art. Cloudflare (or your reverse proxy) and the hosting
+          provider process normal network metadata such as IP addresses. Nothing
+          is sent to the Snagly developer.
+        </p>
+
+        <h3>Security</h3>
+        <p>
+          Cloud mode validates Host and Origin, requires CSRF tokens on unsafe
+          requests, isolates users by ID, signs download links, restricts
+          thumbnails to YouTube image hosts, runs media tools without a shell, and
+          applies rate and size limits. Do not treat an instance without an
+          authentication layer as suitable for untrusted public users.
+        </p>
+      </section>
+
+      <h2>Third parties</h2>
+      <ul>
+        <li>
+          <strong>YouTube / Google</strong> — source of the media and recipient of
+          the requests. Google's privacy policy applies.
+        </li>
+        <li><strong>yt-dlp</strong> and <strong>FFmpeg</strong> — run locally or on the server.</li>
+        <li><strong>Cloudflare</strong> — optional TLS/tunnel provider in cloud mode.</li>
+        <li><strong>GitHub</strong> — only if you visit the repository.</li>
+      </ul>
+      <p>Snagly is not affiliated with YouTube or Google.</p>
+
+      <h2>Children's privacy</h2>
+      <p>
+        Snagly does not knowingly collect personal information from anyone,
+        including children. An operator who needs age controls must add them at the
+        deployment layer.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        If data handling changes, this page and the repository's
+        <code>PRIVACY.md</code> are updated in the same commit. The date at the top
+        reflects the current version.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions or corrections:
+        <a
+          href="https://github.com/whif-fler/Snagly/issues"
+          target="_blank"
+          rel="noopener"
+          >open an issue</a
+        >.
+      </p>
+
+      <h2>Legal note</h2>
+      <p>
+        Downloading content may be restricted by YouTube's Terms of Service and by
+        copyright law where you live. Snagly does not grant rights to any content.
+        You are responsible for what you download, store and share.
+      </p>
+    </main>
+
+    <footer class="policy-foot">
+      <a href="/">Snagly</a>
+      <span id="policyFooter">Local-only by default. Nothing is sent to the developer.</span>
+    </footer>
+
+    <script src="/privacy.js"></script>
+  </body>
+</html>

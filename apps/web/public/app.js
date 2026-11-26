@@ -1,6 +1,6 @@
 'use strict';
 
-const $ = id => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 
 const ui = {
   urls: $('urls'),
@@ -85,25 +85,117 @@ let confirmResolve = null;
 let confirmReturnFocus = null;
 let confirmPreviousOverflow = '';
 
-const WAVE_HEIGHTS = [7, 13, 9, 18, 24, 15, 30, 21, 12, 26, 34, 19, 11, 28, 36, 22, 14, 31, 25, 16, 33, 20, 10, 27, 35, 17, 8, 23, 29, 13, 19, 32, 12, 24, 9, 16];
+// Cloud mode is detected from /api/session. The legacy local server does not
+// expose it, so every branch below falls back to the original local behaviour.
+const cloud = {
+  mode: 'local',
+  capabilities: {
+    localBrowserCookies: true,
+    localFolderPicker: true,
+    fileSystemAccess: false,
+    serverTagEditing: true
+  },
+  csrfToken: '',
+  retentionHours: null,
+  limits: null
+};
+
+const saveState = {
+  handle: null,
+  name: '',
+  needsPermission: false,
+  saved: new Set(),
+  saving: new Set()
+};
+
+const SAVED_PREFIX = 'snagly-saved:';
+
+function savedKey(trackId) {
+  return `${SAVED_PREFIX}${trackId}`;
+}
+
+function isSaved(trackId) {
+  if (saveState.saved.has(trackId)) return true;
+  try {
+    return localStorage.getItem(savedKey(trackId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markSaved(trackId, value = true) {
+  if (value) {
+    saveState.saved.add(trackId);
+    try {
+      localStorage.setItem(savedKey(trackId), '1');
+    } catch {}
+  } else {
+    saveState.saved.delete(trackId);
+    try {
+      localStorage.removeItem(savedKey(trackId));
+    } catch {}
+  }
+}
+
+const supportsDirectoryPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+
+const bootstrapped = bootstrap();
+
+async function bootstrap() {
+  try {
+    const res = await fetch('/api/session', {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store'
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data || data.capabilities?.mode !== 'cloud') return;
+    cloud.mode = 'cloud';
+    cloud.capabilities = data.capabilities;
+    cloud.csrfToken = data.csrfToken || '';
+    cloud.retentionHours = data.retentionHours || null;
+    cloud.limits = data.limits || null;
+  } catch {
+    // Local mode, or the server is temporarily unreachable.
+  }
+}
+
+const WAVE_HEIGHTS = [
+  7, 13, 9, 18, 24, 15, 30, 21, 12, 26, 34, 19, 11, 28, 36, 22, 14, 31, 25, 16, 33, 20, 10, 27, 35, 17, 8, 23,
+  29, 13, 19, 32, 12, 24, 9, 16
+];
 
 // Cover art is fetched by /api/thumb. If one fails to load, hide it and reveal
 // the letter placeholder where there is one. No inline handlers, so the CSP can
 // stay strict.
-document.addEventListener('error', event => {
-  const img = event.target;
-  if (!(img instanceof HTMLImageElement) || !img.classList.contains('thumb-img')) return;
-  img.hidden = true;
-  const fallback = img.nextElementSibling;
-  if (fallback && fallback.classList.contains('placeholder')) fallback.hidden = false;
-}, true);
+document.addEventListener(
+  'error',
+  (event) => {
+    const img = event.target;
+    if (!(img instanceof HTMLImageElement) || !img.classList.contains('thumb-img')) return;
+    img.hidden = true;
+    const fallback = img.nextElementSibling;
+    if (fallback && fallback.classList.contains('placeholder')) fallback.hidden = false;
+  },
+  true
+);
 
 let hadActiveJobs = false;
 function maybeNotifyFinished() {
-  const active = jobs.some(j => j.status === 'running' || j.status === 'queued');
-  if (hadActiveJobs && !active && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+  const active = jobs.some((j) => j.status === 'running' || j.status === 'queued');
+  if (
+    hadActiveJobs &&
+    !active &&
+    document.hidden &&
+    'Notification' in window &&
+    Notification.permission === 'granted'
+  ) {
     const done = jobs.reduce((n, j) => n + j.done, 0);
-    new Notification('Snagly finished', { body: `${done} track${done === 1 ? '' : 's'} in your library.`, silent: true });
+    new Notification('Snagly finished', {
+      body: `${done} track${done === 1 ? '' : 's'} in your library.`,
+      silent: true
+    });
   }
   hadActiveJobs = active;
 }
@@ -121,10 +213,21 @@ function toast(message, kind = 'info') {
 }
 
 function api(path, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const headers = { ...(options.headers || {}) };
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (cloud.mode === 'cloud' && method !== 'GET' && method !== 'HEAD' && cloud.csrfToken) {
+    headers['X-CSRF-Token'] = cloud.csrfToken;
+  }
   return fetch(path, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
-  }).then(async res => {
+    credentials: 'same-origin',
+    headers
+  }).then(async (res) => {
+    if (res.status === 401 && cloud.mode === 'cloud') {
+      await bootstrap();
+      return api(path, options);
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
     return data;
@@ -134,7 +237,9 @@ function api(path, options = {}) {
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('reel-theme', theme);
-  document.querySelector('meta[name="theme-color"]').setAttribute('content', theme === 'dark' ? '#1C1C1E' : '#F5F5F7');
+  document
+    .querySelector('meta[name="theme-color"]')
+    .setAttribute('content', theme === 'dark' ? '#1C1C1E' : '#F5F5F7');
 }
 
 function initTheme() {
@@ -152,7 +257,244 @@ function buildWave() {
   }
 }
 
+/* ---- Cloud saving: File System Access API + IndexedDB ------------------- */
+
+function openHandleDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('snagly', 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function idbGet(key) {
+  try {
+    const db = await openHandleDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('handles', 'readonly');
+      const req = tx.objectStore('handles').get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function idbSet(key, value) {
+  try {
+    const db = await openHandleDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('handles', 'readwrite');
+      tx.objectStore('handles').put(value, key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
+function safeLocalName(value, fallback = 'track') {
+  const cleaned = String(value || '')
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+    .replace(/[. ]+$/g, '')
+    .trim()
+    .slice(0, 160);
+  return cleaned || fallback;
+}
+
+async function directoryPermission(handle, request = false) {
+  if (!handle) return false;
+  try {
+    const options = { mode: 'readwrite' };
+    if ((await handle.queryPermission(options)) === 'granted') return true;
+    if (!request) return false;
+    return (await handle.requestPermission(options)) === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+async function loadSaveHandle() {
+  if (!supportsDirectoryPicker) return;
+  const handle = await idbGet('save-dir');
+  if (!handle) return;
+  saveState.handle = handle;
+  saveState.name = handle.name || 'Selected folder';
+  saveState.needsPermission = !(await directoryPermission(handle, false));
+  renderCloudSave();
+  if (!saveState.needsPermission) autoSave();
+}
+
+async function chooseSaveDir() {
+  if (!supportsDirectoryPicker) {
+    toast('Your browser cannot save to a folder. Use the ZIP or individual file downloads.', 'error');
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ id: 'snagly-saves', mode: 'readwrite' });
+    if (!(await directoryPermission(handle, true))) {
+      toast('Folder permission was not granted.', 'error');
+      return;
+    }
+    saveState.handle = handle;
+    saveState.name = handle.name || 'Selected folder';
+    saveState.needsPermission = false;
+    await idbSet('save-dir', handle);
+    renderCloudSave();
+    toast(`Saving to ${saveState.name}.`);
+    autoSave();
+  } catch (err) {
+    if (err?.name !== 'AbortError') toast(`Could not use that folder: ${err.message}`, 'error');
+  }
+}
+
+async function saveTrack(job, track, { force = false } = {}) {
+  if (!track?.downloadUrl && !track?.id) return false;
+  if (!isSaved(track.id) || force) {
+    if (saveState.saving.has(track.id)) return false;
+    if (!saveState.handle) {
+      await chooseSaveDir();
+      if (!saveState.handle) return false;
+    }
+    if (!(await directoryPermission(saveState.handle, true))) {
+      toast('Folder permission is needed to save downloads.', 'error');
+      return false;
+    }
+    saveState.saving.add(track.id);
+    let writable = null;
+    try {
+      let folder = saveState.handle;
+      if (job.trackCount > 1) {
+        const folderName = safeLocalName(job.folderName || job.title || 'Playlist', 'Playlist');
+        folder = await folder.getDirectoryHandle(folderName, { create: true });
+      }
+      const filename = safeLocalName(
+        track.filename || `${String(track.index).padStart(2, '0')} - ${track.title}`,
+        'track'
+      );
+      const fileHandle = await folder.getFileHandle(filename, { create: true });
+      const res = await fetch(track.downloadUrl || `/api/jobs/${job.id}/files/${track.id}`, {
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      writable = await fileHandle.createWritable();
+      if (res.body?.pipeTo) await res.body.pipeTo(writable);
+      else await writable.write(await res.arrayBuffer());
+      writable = null;
+      markSaved(track.id);
+      return true;
+    } catch (err) {
+      if (writable) {
+        try {
+          await writable.abort();
+        } catch {}
+      }
+      toast(`Could not save ${track.title}: ${err.message}`, 'error');
+      return false;
+    } finally {
+      saveState.saving.delete(track.id);
+    }
+  }
+  return true;
+}
+
+async function saveJob(job, { force = false } = {}) {
+  if (!job) return;
+  if (!saveState.handle) {
+    await chooseSaveDir();
+    if (!saveState.handle) {
+      if (job.archiveUrl) window.location.assign(job.archiveUrl);
+      return;
+    }
+  }
+  const done = job.tracks.filter((t) => t.status === 'done');
+  if (!done.length) {
+    toast('Nothing finished yet.');
+    return;
+  }
+  let saved = 0;
+  for (const track of done) {
+    if (await saveTrack(job, track, { force })) saved++;
+  }
+  if (saved) toast(`Saved ${saved} file${saved === 1 ? '' : 's'} to ${saveState.name}.`);
+  lastFilmstripSig = '';
+  renderLibrary();
+}
+
+// Cloud fallback for browsers without the File System Access API: hand the
+// signed archive or track URL to the normal download manager.
+function downloadOrSaveJob(job) {
+  if (!job) return;
+  if (supportsDirectoryPicker) return saveJob(job);
+  if (job.archiveUrl) window.location.assign(job.archiveUrl);
+  else toast('Nothing is ready to download yet.', 'error');
+}
+
+async function downloadOrSaveTrack(job, track) {
+  if (!job || !track) return;
+  if (supportsDirectoryPicker) return saveTrack(job, track, { force: true });
+  if (track.downloadUrl) window.location.assign(track.downloadUrl);
+  else toast('That file is not available.', 'error');
+}
+
+let autoSaveTimer = null;
+function autoSave() {
+  if (cloud.mode !== 'cloud' || !saveState.handle || saveState.needsPermission) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(async () => {
+    if (!(await directoryPermission(saveState.handle, false))) return;
+    let budget = 4;
+    for (const job of jobs) {
+      if (budget <= 0) break;
+      if (job.status !== 'done' && job.status !== 'partial') continue;
+      if (job.expired) continue;
+      for (const track of job.tracks) {
+        if (track.status !== 'done' || isSaved(track.id)) continue;
+        if (budget-- <= 0) break;
+        await saveTrack(job, track);
+      }
+    }
+    if (cloud.mode === 'cloud') {
+      lastFilmstripSig = '';
+      renderLibrary();
+    }
+  }, 350);
+}
+
+function renderCloudSave() {
+  if (cloud.mode !== 'cloud') return;
+  const saveRow = document.querySelector('.save-row');
+  const cookieRow = document.querySelector('.cookie-toggle-row');
+  const footer = document.querySelector('.site-footer span');
+  const hero = document.querySelector('.hero p');
+  if (cookieRow) cookieRow.hidden = true;
+  if (hero)
+    hero.textContent =
+      'Paste a YouTube playlist or a single video. The server downloads and tags it, then you can save the finished files straight into a folder on this device.';
+  if (footer)
+    footer.textContent = `Files are processed on this server and kept for ${cloud.retentionHours || 24} hours unless you save them.`;
+  ui.hint.textContent = `Processed on this server. Save finished files to your device — server copies expire after ${cloud.retentionHours || 24} hours. Only download media you have rights to.`;
+  if (saveRow) {
+    saveRow.hidden = !supportsDirectoryPicker;
+    if (supportsDirectoryPicker) {
+      ui.savePath.readOnly = true;
+      ui.savePath.value = saveState.name || '';
+      ui.savePath.placeholder = 'Choose a folder (or use Downloads)';
+      ui.browse.textContent = saveState.name ? 'Change folder' : 'Choose folder';
+    }
+  }
+}
+
 function renderSettings() {
+  if (cloud.mode === 'cloud') {
+    renderCloudSave();
+    return;
+  }
   if (!ui.savePath.value) ui.savePath.value = status.root || '';
   if (status.format && !ui.formatSelect.value) {
     ui.formatSelect.value = status.format;
@@ -165,20 +507,22 @@ function renderSettings() {
     const row = ui.cookieToggle.closest('.cookie-toggle');
     row?.classList.toggle('disabled', !source);
     if (row) {
-      row.title = source === 'file'
-        ? 'Uses the cookies.txt file in the Snagly folder. Nothing is uploaded.'
-        : source === 'browser'
-          ? 'Uses this browser\'s YouTube cookies locally. Nothing is uploaded.'
-          : 'No YouTube sign-in source was found.';
+      row.title =
+        source === 'file'
+          ? 'Uses the cookies.txt file in the Snagly folder. Nothing is uploaded.'
+          : source === 'browser'
+            ? "Uses this browser's YouTube cookies locally. Nothing is uploaded."
+            : 'No YouTube sign-in source was found.';
     }
   }
-  ui.hint.textContent = status.tools?.yt && status.tools?.ffmpeg
-    ? 'Runs on this computer — nothing is uploaded. Only download audio you have rights to.'
-    : 'Downloader tools were not found. Check the README for setup.';
+  ui.hint.textContent =
+    status.tools?.yt && status.tools?.ffmpeg
+      ? 'Runs on this computer — nothing is uploaded. Only download audio you have rights to.'
+      : 'Downloader tools were not found. Check the README for setup.';
 }
 
 function renderActivity() {
-  const active = jobs.filter(j => j.status === 'running' || j.status === 'queued');
+  const active = jobs.filter((j) => j.status === 'running' || j.status === 'queued');
   if (!active.length) {
     ui.activity.hidden = true;
     return;
@@ -188,14 +532,14 @@ function renderActivity() {
   const total = active.reduce((n, j) => n + j.trackCount, 0);
   const done = active.reduce((n, j) => n + j.done, 0);
   const failed = active.reduce((n, j) => n + j.failed, 0);
-  const runningTrack = active.flatMap(j => j.tracks).find(t => t.status === 'running');
+  const runningTrack = active.flatMap((j) => j.tracks).find((t) => t.status === 'running');
 
   ui.activityTitle.textContent = active.length === 1 ? active[0].title : `${active.length} playlists`;
   ui.activityTrack.textContent = runningTrack
     ? `#${String(runningTrack.index).padStart(2, '0')} ${runningTrack.title}`
     : 'Preparing next track';
 
-  const allTracks = active.flatMap(j => j.tracks);
+  const allTracks = active.flatMap((j) => j.tracks);
   const partial = allTracks.reduce((n, t) => n + (t.status === 'done' ? 1 : (t.progress || 0) / 100), 0);
   const overall = total ? Math.min(100, Math.round((partial / total) * 100)) : 0;
   ui.activityPercent.textContent = `${overall}%`;
@@ -215,32 +559,49 @@ function renderActivity() {
     bars[i].classList.toggle('leading', !status.paused && i === filled && filled < bars.length);
   }
 
-  const activeTracks = allTracks.filter(t => t.status === 'running').slice(0, 6);
-  ui.activeTracks.innerHTML = activeTracks.map(t => {
-    const phase = t.phase === 'processing' ? 'Tagging' : t.phase === 'preparing' ? 'Starting' : 'Downloading';
-    const stats = [
-      `${t.progress || 0}%`,
-      t.speed && t.phase !== 'processing' ? t.speed : '',
-      t.eta != null && t.phase !== 'processing' ? `${t.eta}s left` : ''
-    ].filter(Boolean).join(', ');
-    return `<div class="active-row">
+  const activeTracks = allTracks.filter((t) => t.status === 'running').slice(0, 6);
+  ui.activeTracks.innerHTML = activeTracks
+    .map((t) => {
+      const phase =
+        t.phase === 'processing' ? 'Tagging' : t.phase === 'preparing' ? 'Starting' : 'Downloading';
+      const stats = [
+        `${t.progress || 0}%`,
+        t.speed && t.phase !== 'processing' ? t.speed : '',
+        t.eta != null && t.phase !== 'processing' ? `${t.eta}s left` : ''
+      ]
+        .filter(Boolean)
+        .join(', ');
+      return `<div class="active-row">
       <span class="active-name">#${escapeHtml(String(t.index).padStart(2, '0'))} ${escapeHtml(t.title)}</span>
       <span class="active-stats">${escapeHtml(phase)}, ${escapeHtml(stats)}</span>
       <span class="active-bar"><span style="width:${t.progress || 0}%"></span></span>
     </div>`;
-  }).join('');
+    })
+    .join('');
 
   ui.pause.textContent = status.paused ? 'Resume' : 'Pause';
-  const hasActive = jobs.some(j => j.status === 'running' || j.status === 'queued');
+  const hasActive = jobs.some((j) => j.status === 'running' || j.status === 'queued');
   ui.cancelButton.hidden = !hasActive;
 }
 
 function renderLibrary() {
   const list = filteredJobs();
-  const sig = list.map(j => [j.id, j.title, j.thumb, j.trackCount, j.status].join('~')).join(';') + '|' + ui.librarySearch.value + '|' + ui.libraryFilter.value + '|' + ui.librarySort.value;
+  const savedSig = list
+    .map((j) => j.tracks.filter((t) => t.status === 'done' && isSaved(t.id)).length)
+    .join(',');
+  const sig =
+    list.map((j) => [j.id, j.title, j.thumb, j.trackCount, j.status].join('~')).join(';') +
+    '|' +
+    ui.librarySearch.value +
+    '|' +
+    ui.libraryFilter.value +
+    '|' +
+    ui.librarySort.value +
+    '|' +
+    savedSig;
   if (sig !== lastFilmstripSig) {
     lastFilmstripSig = sig;
-    ui.filmstrip.querySelectorAll('.tile').forEach(el => el.remove());
+    ui.filmstrip.querySelectorAll('.tile').forEach((el) => el.remove());
     ui.emptyState.hidden = list.length > 0;
     ui.filmstrip.insertAdjacentElement('beforeend', ui.emptyState);
 
@@ -270,26 +631,56 @@ function renderLibrary() {
 
   const allDone = jobs.reduce((n, j) => n + j.done, 0);
   const allTracks = jobs.reduce((n, j) => n + j.trackCount, 0);
-  ui.librarySummary.textContent = jobs.length ? `${jobs.length} playlist${jobs.length === 1 ? '' : 's'}, ${allDone} of ${allTracks} tracks` : '';
+  ui.librarySummary.textContent = jobs.length
+    ? `${jobs.length} playlist${jobs.length === 1 ? '' : 's'}, ${allDone} of ${allTracks} tracks`
+    : '';
 
   for (const job of jobs) {
     const tile = ui.filmstrip.querySelector(`[data-job="${job.id}"]`);
     if (!tile) continue;
-    const partial = job.tracks.reduce((n, t) => n + (t.status === 'done' ? 1 : (t.status === 'running' ? (t.progress || 0) / 100 : 0)), 0);
+    const partial = job.tracks.reduce(
+      (n, t) => n + (t.status === 'done' ? 1 : t.status === 'running' ? (t.progress || 0) / 100 : 0),
+      0
+    );
     const pct = job.trackCount ? Math.min(100, Math.round((partial / job.trackCount) * 100)) : 0;
     tile.querySelector('.tile-progress span').style.width = `${pct}%`;
     const dot = tile.querySelector('.status-dot');
     dot.className = `status-dot ${job.status}`;
-    tile.querySelector('.tile-count').textContent = `${pct}% (${job.done}/${job.trackCount}${job.failed ? `, ${job.failed} failed` : ''}${job.cancelled ? `, ${job.cancelled} cancelled` : ''}${job.missing ? `, ${job.missing} missing` : ''})`;
+    tile.querySelector('.tile-count').textContent =
+      `${pct}% (${job.done}/${job.trackCount}${job.failed ? `, ${job.failed} failed` : ''}${job.cancelled ? `, ${job.cancelled} cancelled` : ''}${job.missing ? `, ${job.missing} missing` : ''})`;
     const retryButton = tile.querySelector('[data-action="retry"]');
     const retryable = (job.failed || 0) + (job.cancelled || 0) + (job.missing || 0);
     retryButton.hidden = retryable === 0;
-    retryButton.textContent = (job.failed || job.cancelled) ? 'Retry failed' : 'Re-download missing';
+    retryButton.textContent = job.failed || job.cancelled ? 'Retry failed' : 'Re-download missing';
+
+    const openButton = tile.querySelector('[data-action="open"]');
+    if (cloud.mode === 'cloud') {
+      const doneTracks = job.tracks.filter((t) => t.status === 'done');
+      const saved = doneTracks.filter((t) => isSaved(t.id)).length;
+      if (supportsDirectoryPicker) {
+        openButton.textContent =
+          doneTracks.length && saved === doneTracks.length
+            ? 'Saved'
+            : saved
+              ? `Save (${saved}/${doneTracks.length})`
+              : 'Save to folder';
+        openButton.disabled = doneTracks.length === 0 || saved === doneTracks.length;
+      } else {
+        openButton.textContent = 'Download ZIP';
+        openButton.disabled = !job.archiveUrl;
+      }
+      if ((job.done || 0) > 0) {
+        tile.querySelector('.tile-count').textContent += `, ${saved}/${job.done} saved`;
+      }
+    }
   }
 }
 
 function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return String(value ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+  );
 }
 const escapeAttr = escapeHtml;
 
@@ -305,8 +696,8 @@ function filteredJobs() {
   let list = jobs.slice();
   const q = ui.librarySearch.value.trim().toLowerCase();
   const f = ui.libraryFilter.value;
-  if (q) list = list.filter(j => j.title.toLowerCase().includes(q));
-  if (f !== 'all') list = list.filter(j => j.status === f);
+  if (q) list = list.filter((j) => j.title.toLowerCase().includes(q));
+  if (f !== 'all') list = list.filter((j) => j.status === f);
   const s = ui.librarySort.value;
   list.sort((a, b) => {
     if (s === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
@@ -319,16 +710,18 @@ function filteredJobs() {
 }
 
 function openTrackModal(jobId) {
-  const job = jobs.find(j => j.id === jobId);
+  const job = jobs.find((j) => j.id === jobId);
   if (!job) return;
   openModalJobId = jobId;
   ui.modalTitle.textContent = job.title;
-  const thumb = job.thumb ? `<img class="thumb-img" src="${escapeAttr(thumbSrc(job.thumb))}" alt="" loading="lazy">` : `<div class="placeholder" style="width:100%;height:100%;display:grid;place-items:center;font-size:42px;color:var(--faint);font-weight:600">${escapeHtml((job.title||'?').charAt(0))}</div>`;
+  const thumb = job.thumb
+    ? `<img class="thumb-img" src="${escapeAttr(thumbSrc(job.thumb))}" alt="" loading="lazy">`
+    : `<div class="placeholder" style="width:100%;height:100%;display:grid;place-items:center;font-size:42px;color:var(--faint);font-weight:600">${escapeHtml((job.title || '?').charAt(0))}</div>`;
   ui.modalArt.innerHTML = thumb;
-  const done = job.tracks.filter(t => t.status === 'done').length;
-  const failed = job.tracks.filter(t => t.status === 'failed').length;
-  const cancelled = job.tracks.filter(t => t.status === 'cancelled').length;
-  const missing = job.tracks.filter(t => t.status === 'missing').length;
+  const done = job.tracks.filter((t) => t.status === 'done').length;
+  const failed = job.tracks.filter((t) => t.status === 'failed').length;
+  const cancelled = job.tracks.filter((t) => t.status === 'cancelled').length;
+  const missing = job.tracks.filter((t) => t.status === 'missing').length;
   ui.modalMeta.innerHTML = `
     <span>${job.trackCount} ${job.isVideo ? 'video' : 'track'}${job.trackCount === 1 ? '' : 's'}</span>
     <span style="color:#34C759">${done} done</span>
@@ -337,21 +730,35 @@ function openTrackModal(jobId) {
     ${missing ? `<span style="color:var(--danger)">${missing} missing</span>` : ''}
     <span>${job.single ? 'Single video' : 'Playlist'}</span>
   `;
-  ui.modalBody.innerHTML = job.tracks.map(t => {
-    const pct = t.status === 'done' ? 100 : (t.progress || 0);
-    const statusLabel = t.status === 'done' ? 'Done' : t.status === 'failed' ? 'Failed' : t.status === 'cancelled' ? 'Cancelled' : t.status === 'missing' ? 'Missing' : t.status === 'running' ? 'Downloading' : 'Queued';
-    const baseActions = t.status === 'done'
-      ? `<button class="text-button" data-action="open-file" data-track="${escapeAttr(t.id)}">Open file</button>`
-      : t.status === 'failed' || t.status === 'cancelled' || t.status === 'missing'
-        ? `<button class="text-button" data-action="retry-track" data-track="${escapeAttr(t.id)}">Retry</button>`
-        : '';
-    const editBtn = t.status === 'done'
-      ? `<button class="text-button" data-action="edit-tags" data-track="${escapeAttr(t.id)}">Edit tags</button>`
-      : '';
-    return `<div class="track-detail" data-track="${escapeAttr(t.id)}">
+  ui.modalBody.innerHTML = job.tracks
+    .map((t) => {
+      const pct = t.status === 'done' ? 100 : t.progress || 0;
+      const statusLabel =
+        t.status === 'done'
+          ? 'Done'
+          : t.status === 'failed'
+            ? 'Failed'
+            : t.status === 'cancelled'
+              ? 'Cancelled'
+              : t.status === 'missing'
+                ? 'Missing'
+                : t.status === 'running'
+                  ? 'Downloading'
+                  : 'Queued';
+      const baseActions =
+        t.status === 'done'
+          ? `<button class="text-button" data-action="open-file" data-track="${escapeAttr(t.id)}">${cloud.mode === 'cloud' ? 'Save file' : 'Open file'}</button>`
+          : t.status === 'failed' || t.status === 'cancelled' || t.status === 'missing'
+            ? `<button class="text-button" data-action="retry-track" data-track="${escapeAttr(t.id)}">Retry</button>`
+            : '';
+      const editBtn =
+        t.status === 'done'
+          ? `<button class="text-button" data-action="edit-tags" data-track="${escapeAttr(t.id)}">Edit tags</button>`
+          : '';
+      return `<div class="track-detail" data-track="${escapeAttr(t.id)}">
       <div class="track-name" style="flex:1; min-width:0; position:relative;">
         <div style="font-weight:600" data-field="title">${escapeHtml(t.title)}</div>
-        <div style="font-size:11px;color:var(--faint)" data-field="artist">${escapeHtml(t.artist)}, #${String(t.index).padStart(2,'0')}</div>
+        <div style="font-size:11px;color:var(--faint)" data-field="artist">${escapeHtml(t.artist)}, #${String(t.index).padStart(2, '0')}</div>
         <input type="text" data-edit="title" value="${escapeAttr(t.title)}" hidden style="width:100%;font-size:13px;font-weight:600;border:1px solid var(--hairline);border-radius:4px;padding:2px 6px;background:var(--surface)">
         <input type="text" data-edit="artist" value="${escapeAttr(t.artist)}" hidden style="width:100%;font-size:11px;color:var(--faint);border:1px solid var(--hairline);border-radius:4px;padding:1px 6px;background:var(--surface);margin-top:2px">
       </div>
@@ -364,8 +771,21 @@ function openTrackModal(jobId) {
         <button class="text-button" data-action="cancel-edit" data-track="${escapeAttr(t.id)}" hidden>Cancel</button>
       </div>
     </div>`;
-  }).join('');
+    })
+    .join('');
   ui.modalOpenFolder.dataset.job = jobId;
+  if (cloud.mode === 'cloud') {
+    if (supportsDirectoryPicker) {
+      ui.modalOpenFolder.textContent = 'Save to folder';
+      ui.modalOpenFolder.hidden = done === 0;
+    } else {
+      ui.modalOpenFolder.textContent = 'Download ZIP';
+      ui.modalOpenFolder.hidden = !job.archiveUrl;
+    }
+  } else {
+    ui.modalOpenFolder.textContent = 'Open folder';
+    ui.modalOpenFolder.hidden = false;
+  }
   ui.modalRetryAll.dataset.job = jobId;
   ui.modalRemove.dataset.job = jobId;
   const isActive = job.status === 'running' || job.status === 'queued';
@@ -390,7 +810,7 @@ function closeTrackModal() {
 
 function askConfirm({ title, message, confirmLabel = 'Continue', cancelLabel = 'Cancel', danger = false }) {
   if (confirmResolve) settleConfirm(false);
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     confirmResolve = resolve;
     confirmReturnFocus = document.activeElement;
     confirmPreviousOverflow = document.body.style.overflow;
@@ -421,11 +841,11 @@ function settleConfirm(value) {
 
 ui.confirmAccept.addEventListener('click', () => settleConfirm(true));
 ui.confirmCancel.addEventListener('click', () => settleConfirm(false));
-ui.confirmModal.addEventListener('click', event => {
+ui.confirmModal.addEventListener('click', (event) => {
   if (event.target === ui.confirmModal) settleConfirm(false);
 });
 
-document.addEventListener('keydown', event => {
+document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !ui.confirmModal.hidden) {
     event.preventDefault();
     settleConfirm(false);
@@ -464,19 +884,25 @@ function exportHistory() {
   for (const job of jobs) {
     for (const t of job.tracks) {
       if (t.status === 'done' && t.file) {
-        history.push({ title: t.title, artist: t.artist, album: job.albumTag || job.title, file: t.file, completedAt: t.completedAt || job.finishedAt });
+        history.push({
+          title: t.title,
+          artist: t.artist,
+          album: job.albumTag || job.title,
+          file: t.file,
+          completedAt: t.completedAt || job.finishedAt
+        });
       }
     }
   }
   history.sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0));
   const csv = ['title,artist,album,file,completedAt\n']
-    .concat(history.map(h => [h.title, h.artist, h.album, h.file, h.completedAt].map(csvCell).join(',')))
+    .concat(history.map((h) => [h.title, h.artist, h.album, h.file, h.completedAt].map(csvCell).join(',')))
     .join('');
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `snagly-history-${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `snagly-history-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   toast(`Exported ${history.length} tracks. The CSV includes full file paths.`);
@@ -571,17 +997,19 @@ function updateAudioHint() {
     return;
   }
   const target = AUDIO_TARGET_KBPS[ui.formatSelect.value] ?? 0;
-  ui.audioQualityHint.textContent = target > sourceAudio.kbps
-    ? `Source is ${sourceAudio.codec} ${sourceAudio.kbps} kbps. Higher bitrates only make larger files.`
-    : `Source audio: ${sourceAudio.codec} ${sourceAudio.kbps} kbps`;
-  ui.audioQualityHint.title = sourceAudio.kbps < 320
-    ? 'This is the source ceiling. Higher bitrates are upsampled, not more detailed.'
-    : 'This is the best audio these links offer.';
+  ui.audioQualityHint.textContent =
+    target > sourceAudio.kbps
+      ? `Source is ${sourceAudio.codec} ${sourceAudio.kbps} kbps. Higher bitrates only make larger files.`
+      : `Source audio: ${sourceAudio.codec} ${sourceAudio.kbps} kbps`;
+  ui.audioQualityHint.title =
+    sourceAudio.kbps < 320
+      ? 'This is the source ceiling. Higher bitrates are upsampled, not more detailed.'
+      : 'This is the best audio these links offer.';
 }
 
 // Trim the quality menus to what the pasted links actually offer.
 function applySourceFormats(sources) {
-  const probes = (sources || []).map(s => s.formats).filter(Boolean);
+  const probes = (sources || []).map((s) => s.formats).filter(Boolean);
   if (!probes.length) {
     ui.videoQualityHint.textContent = 'Video + audio, source quality';
     sourceAudio = null;
@@ -590,14 +1018,15 @@ function applySourceFormats(sources) {
   }
 
   // Video is a ceiling, so every rung up to the tallest source is usable.
-  const maxHeight = Math.max(...probes.map(p => p.maxHeight || 0));
-  const heights = VIDEO_LADDER.filter(h => h <= maxHeight);
+  const maxHeight = Math.max(...probes.map((p) => p.maxHeight || 0));
+  const heights = VIDEO_LADDER.filter((h) => h <= maxHeight);
   if (heights.length) {
     const current = Number(String(ui.videoFormatSelect.value || '').replace('p', ''));
-    const fallback = heights.includes(1080) ? 1080 : (heights.find(h => h < 1080) || heights[0]);
+    const fallback = heights.includes(1080) ? 1080 : heights.find((h) => h < 1080) || heights[0];
     const keep = heights.includes(current) ? current : fallback;
     ui.videoFormatSelect.innerHTML = heights
-      .map(h => `<option value="${h}p">${VIDEO_LABELS[h]}</option>`).join('');
+      .map((h) => `<option value="${h}p">${VIDEO_LABELS[h]}</option>`)
+      .join('');
     ui.videoFormatSelect.value = `${keep}p`;
     ui.videoFormatSelect._syncMenu?.();
   } else if (maxHeight > 0) {
@@ -613,7 +1042,7 @@ function applySourceFormats(sources) {
       ? `Video + audio, source quality (${maxHeight}p)`
       : 'Video + audio, source quality';
 
-  const audio = probes.map(p => p.audio).filter(a => a && a.kbps);
+  const audio = probes.map((p) => p.audio).filter((a) => a && a.kbps);
   const bestAudio = audio.sort((a, b) => b.kbps - a.kbps)[0];
   const bestOption = ui.formatSelect.querySelector('option[value="best"]');
   if (bestOption) {
@@ -641,21 +1070,22 @@ function resetSourceFormats() {
 function renderSelection() {
   if (!previewData) return;
   updateSelectionSummary();
-  ui.selectionSources.innerHTML = previewData.sources.map((source, si) => {
-    const all = selected[si].size === source.entries.length;
-    const multi = source.entries.length > 1;
-    const noun = status.isVideo ? 'video' : 'track';
-    const metaLabel = source.single
-      ? 'Single video'
-      : `${source.entries.length} ${noun}${source.entries.length === 1 ? '' : 's'}`;
-    const mix = /[?&]list=RD/i.test(source.url || '');
-    const large = !mix && source.entries.length > 50;
-    const banner = mix
-      ? 'This is a YouTube Mix, not a fixed playlist.'
-      : large
-        ? `Large playlist: ${source.entries.length} tracks.`
-        : '';
-    return `
+  ui.selectionSources.innerHTML = previewData.sources
+    .map((source, si) => {
+      const all = selected[si].size === source.entries.length;
+      const multi = source.entries.length > 1;
+      const noun = status.isVideo ? 'video' : 'track';
+      const metaLabel = source.single
+        ? 'Single video'
+        : `${source.entries.length} ${noun}${source.entries.length === 1 ? '' : 's'}`;
+      const mix = /[?&]list=RD/i.test(source.url || '');
+      const large = !mix && source.entries.length > 50;
+      const banner = mix
+        ? 'This is a YouTube Mix, not a fixed playlist.'
+        : large
+          ? `Large playlist: ${source.entries.length} tracks.`
+          : '';
+      return `
     <div class="source-group" data-source="${si}">
       <div class="source-head">
         ${source.thumb ? `<img class="thumb-img" src="${escapeAttr(thumbSrc(source.thumb))}" alt="">` : ''}
@@ -665,20 +1095,29 @@ function renderSelection() {
         </div>
         ${multi ? `<input class="source-check" type="checkbox" ${all ? 'checked' : ''} aria-label="${all ? 'Deselect' : 'Select'} all ${noun}s">` : ''}
       </div>
-      ${banner ? `<div class="source-banner">
+      ${
+        banner
+          ? `<div class="source-banner">
         <span>${banner}</span>
         <button class="quiet-button source-banner-button" type="button" data-select-all="${si}" ${all ? 'hidden' : ''}>Select all ${source.entries.length}</button>
-      </div>` : ''}
+      </div>`
+          : ''
+      }
       <div class="track-list">
-        ${source.entries.map(e => `
+        ${source.entries
+          .map(
+            (e) => `
           <div class="track-row ${selected[si].has(e.index) ? 'checked' : ''}" role="checkbox" tabindex="0" aria-checked="${selected[si].has(e.index)}" data-index="${e.index}">
             <input type="checkbox" data-index="${e.index}" tabindex="-1" aria-hidden="true" ${selected[si].has(e.index) ? 'checked' : ''}>
             <span class="track-num">${String(e.index).padStart(2, '0')}</span>
             <span class="track-name" title="${escapeAttr(e.title)}">${escapeHtml(e.title)}</span>
-          </div>`).join('')}
+          </div>`
+          )
+          .join('')}
       </div>
     </div>`;
-  }).join('');
+    })
+    .join('');
   previewData.sources.forEach((_, si) => updateGroupBadges(si));
   applyTrackFilter();
 }
@@ -695,7 +1134,10 @@ function updateGroupBadges(si) {
   const some = selected[si].size > 0 && !all;
   checkbox.checked = all;
   checkbox.indeterminate = some;
-  checkbox.setAttribute('aria-label', `${all ? 'Deselect' : 'Select'} all ${status.isVideo ? 'videos' : 'tracks'}`);
+  checkbox.setAttribute(
+    'aria-label',
+    `${all ? 'Deselect' : 'Select'} all ${status.isVideo ? 'videos' : 'tracks'}`
+  );
 }
 
 // Update one source in place. Rebuilding the whole panel on every All/Clear
@@ -704,7 +1146,7 @@ function syncGroupSelection(si) {
   const source = previewData?.sources[si];
   const group = ui.selectionSources.querySelector(`.source-group[data-source="${si}"]`);
   if (!source || !group) return;
-  group.querySelectorAll('.track-row').forEach(row => {
+  group.querySelectorAll('.track-row').forEach((row) => {
     const input = row.querySelector('input[type="checkbox"]');
     const on = selected[si].has(Number(input.dataset.index));
     input.checked = on;
@@ -716,9 +1158,9 @@ function syncGroupSelection(si) {
 
 function applyTrackFilter() {
   const query = ui.trackFilter.value.trim().toLowerCase();
-  ui.selectionSources.querySelectorAll('.source-group').forEach(group => {
+  ui.selectionSources.querySelectorAll('.source-group').forEach((group) => {
     let visible = 0;
-    group.querySelectorAll('.track-row').forEach(row => {
+    group.querySelectorAll('.track-row').forEach((row) => {
       const match = !query || row.querySelector('.track-name').textContent.toLowerCase().includes(query);
       row.hidden = !match;
       if (match) visible++;
@@ -728,7 +1170,10 @@ function applyTrackFilter() {
 }
 
 async function previewLinks() {
-  const urls = ui.urls.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const urls = ui.urls.value
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (!urls.length) {
     toast('Paste at least one link first.', 'error');
     ui.urls.focus();
@@ -744,9 +1189,9 @@ async function previewLinks() {
     previewData = result;
     // A Mix is a moving target, and very large playlists are easy to start by
     // accident. Both open with the first 25 items instead of everything.
-    selected = result.sources.map(s => {
+    selected = result.sources.map((s) => {
       const limited = /[?&]list=RD/i.test(s.url || '') || s.entries.length > 50;
-      return new Set((limited ? s.entries.slice(0, 25) : s.entries).map(e => e.index));
+      return new Set((limited ? s.entries.slice(0, 25) : s.entries).map((e) => e.index));
     });
     rowAnchors.clear();
     ui.trackFilter.value = '';
@@ -763,10 +1208,10 @@ async function previewLinks() {
 
     for (const err of result.errors || []) toast(`Could not read that link: ${err.error}`, 'error');
 
-    if (!result.sources.some(s => s.formats)) resetSourceFormats();
+    if (!result.sources.some((s) => s.formats)) resetSourceFormats();
     else applySourceFormats(result.sources);
 
-    const pending = result.sources.filter(s => !s.formats);
+    const pending = result.sources.filter((s) => !s.formats);
     if (pending.length) {
       ui.audioQualityHint.textContent = 'Checking source quality…';
       if (!ui.videoQualitySection.hidden) ui.videoQualityHint.textContent = 'Checking source quality…';
@@ -785,7 +1230,7 @@ async function previewLinks() {
 // only change the quality menus. Probing spawns yt-dlp, so keep a small cap
 // instead of firing one process per pasted link.
 async function detectFormats(result, seq) {
-  const pending = result.sources.filter(s => !s.formats);
+  const pending = result.sources.filter((s) => !s.formats);
   let cursor = 0;
   const workers = Array.from({ length: Math.min(3, pending.length) }, async () => {
     while (cursor < pending.length) {
@@ -794,7 +1239,9 @@ async function detectFormats(result, seq) {
       try {
         const data = await api('/api/probe', { method: 'POST', body: JSON.stringify({ url: source.url }) });
         formats = data.formats || null;
-      } catch { /* leave the source untouched */ }
+      } catch {
+        /* leave the source untouched */
+      }
       // Show quality as soon as a probe lands instead of waiting for every
       // pasted link to finish. Failures leave the hint alone.
       if (formats && previewData === result && seq === previewSeq) {
@@ -832,7 +1279,7 @@ async function refresh() {
 
 function connectEvents() {
   const source = new EventSource('/api/events');
-  source.onmessage = event => {
+  source.onmessage = (event) => {
     try {
       const payload = JSON.parse(event.data);
       if (payload.type === 'notice') {
@@ -841,10 +1288,19 @@ function connectEvents() {
       }
       if (payload.type !== 'state') return;
       jobs = payload.jobs || jobs;
-      status = { ...status, paused: payload.paused, workers: payload.workers, active: payload.active, penaltyMs: payload.penaltyMs, isVideo: payload.isVideo };
+      status = {
+        ...status,
+        paused: payload.paused,
+        workers: payload.workers,
+        active: payload.active,
+        penaltyMs: payload.penaltyMs,
+        isVideo: payload.isVideo
+      };
       scheduleRender();
       if (payload.libraryRemoved) {
-        toast(`${payload.libraryRemoved} librar${payload.libraryRemoved === 1 ? 'y entry' : 'y entries'} removed. The folder was deleted on disk.`);
+        toast(
+          `${payload.libraryRemoved} librar${payload.libraryRemoved === 1 ? 'y entry' : 'y entries'} removed. The folder was deleted on disk.`
+        );
       }
     } catch {}
   };
@@ -856,7 +1312,7 @@ function connectEvents() {
 
 async function submitJobs(payload) {
   let result = await api('/api/jobs', { method: 'POST', body: JSON.stringify(payload) });
-  const duplicates = (result.errors || []).filter(error => error.duplicate);
+  const duplicates = (result.errors || []).filter((error) => error.duplicate);
   if (duplicates.length && !payload.allowDuplicate) {
     const confirmed = await askConfirm({
       title: 'Already in library',
@@ -865,7 +1321,10 @@ async function submitJobs(payload) {
       cancelLabel: 'Skip'
     });
     if (confirmed) {
-      result = await api('/api/jobs', { method: 'POST', body: JSON.stringify({ ...payload, allowDuplicate: true }) });
+      result = await api('/api/jobs', {
+        method: 'POST',
+        body: JSON.stringify({ ...payload, allowDuplicate: true })
+      });
     }
   }
   return result;
@@ -875,7 +1334,10 @@ async function startDownload() {
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission().catch(() => {});
   }
-  const urls = ui.urls.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const urls = ui.urls.value
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (!urls.length) {
     toast('Paste at least one playlist link first.', 'error');
     ui.urls.focus();
@@ -890,7 +1352,7 @@ async function startDownload() {
     const isVideo = ui.modeVideo.classList.contains('active');
     const items = previewData.sources
       .map((source, si) => ({ url: source.url, selected: [...selected[si]] }))
-      .filter(item => item.selected.length);
+      .filter((item) => item.selected.length);
     if (!items.length) {
       toast('Select at least one track.', 'error');
       return;
@@ -912,7 +1374,7 @@ async function startDownload() {
       const fmt = isVideo ? ui.videoFormatSelect.value : ui.formatSelect.value;
       const result = await submitJobs({
         items,
-        root: ui.savePath.value.trim(),
+        ...(cloud.mode === 'cloud' ? {} : { root: ui.savePath.value.trim() }),
         format: fmt,
         isVideo
       });
@@ -927,7 +1389,9 @@ async function startDownload() {
         ui.choose.hidden = false;
         ui.trackFilter.hidden = true;
         updateDownloadButton();
-        toast(`Downloading ${result.created.reduce((n, j) => n + j.trackCount, 0)} selected track${result.created.length === 1 ? '' : 's'}.`);
+        toast(
+          `Downloading ${result.created.reduce((n, j) => n + j.trackCount, 0)} selected track${result.created.length === 1 ? '' : 's'}.`
+        );
       }
       for (const err of result.errors || []) toast(`Could not start that link: ${err.error}`, 'error');
       await refresh();
@@ -948,13 +1412,15 @@ async function startDownload() {
     const fmt = isVideo ? ui.videoFormatSelect.value : ui.formatSelect.value;
     const result = await submitJobs({
       urls,
-      root: ui.savePath.value.trim(),
+      ...(cloud.mode === 'cloud' ? {} : { root: ui.savePath.value.trim() }),
       format: fmt,
       isVideo
     });
     if (result.created?.length) {
       ui.urls.value = '';
-      toast(`Added ${result.created.length} playlist${result.created.length === 1 ? '' : 's'}. ${isVideo ? 'Downloading video' : 'Downloading audio'} now.`);
+      toast(
+        `Added ${result.created.length} playlist${result.created.length === 1 ? '' : 's'}. ${isVideo ? 'Downloading video' : 'Downloading audio'} now.`
+      );
     }
     for (const err of result.errors || []) {
       toast(`Could not read that playlist: ${err.error}`, 'error');
@@ -972,42 +1438,51 @@ async function postSettings(patch) {
   try {
     status = await api('/api/settings', { method: 'POST', body: JSON.stringify(patch) });
     scheduleRender();
-  } catch (err) { toast(err.message, 'error'); }
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 // Ask once per browser profile before the first yt-dlp run that may read the
 // user's YouTube cookies. The choice is stored locally and can be changed in
 // the composer at any time.
 async function maybeAskCookieChoice() {
+  // Cloud mode never reads browser cookies; the prompt would be misleading.
+  if (cloud.mode === 'cloud') return;
   const source = status?.cookieSource || (status?.tools?.browser ? 'browser' : null);
   if (!source) return;
   if (localStorage.getItem('snagly-cookie-choice')) return;
   const useCookies = await askConfirm({
     title: 'Use YouTube sign-in?',
-    message: source === 'file'
-      ? 'YouTube sometimes asks for a sign-in check. Snagly found cookies.txt in its folder and can use it only for YouTube requests. The file stays on this computer and is never uploaded. You can change this at any time. See Privacy for details.'
-      : 'YouTube sometimes asks for a sign-in check. Snagly can let the local yt-dlp tool read the YouTube cookies already saved in this browser, on this computer. The cookies are used only for YouTube requests — they are never saved in Snagly\'s history and never sent to the developer. You can change this at any time. See Privacy for details.',
+    message:
+      source === 'file'
+        ? 'YouTube sometimes asks for a sign-in check. Snagly found cookies.txt in its folder and can use it only for YouTube requests. The file stays on this computer and is never uploaded. You can change this at any time. See Privacy for details.'
+        : "YouTube sometimes asks for a sign-in check. Snagly can let the local yt-dlp tool read the YouTube cookies already saved in this browser, on this computer. The cookies are used only for YouTube requests — they are never saved in Snagly's history and never sent to the developer. You can change this at any time. See Privacy for details.",
     confirmLabel: 'Use sign-in',
     cancelLabel: 'No thanks'
   });
   localStorage.setItem('snagly-cookie-choice', '1');
   await postSettings({ useCookies });
   if (ui.cookieToggle) ui.cookieToggle.checked = useCookies;
-  toast(useCookies
-    ? 'YouTube sign-in enabled. Change it any time in the composer.'
-    : 'YouTube sign-in off. Snagly will download without cookies.');
+  toast(
+    useCookies
+      ? 'YouTube sign-in enabled. Change it any time in the composer.'
+      : 'YouTube sign-in off. Snagly will download without cookies.'
+  );
 }
 
 ui.download.addEventListener('click', startDownload);
 ui.selectionDownload.addEventListener('click', startDownload);
-ui.urls.addEventListener('keydown', event => {
+ui.urls.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') startDownload();
 });
 let previewDebounce = null;
 // Avoid firing yt-dlp for half-typed links. Only a complete video, playlist,
 // or shorts URL is worth a round trip.
 function hasCompleteYouTubeLink(text) {
-  return /(?:youtu\.be\/[\w-]{11})|(?:youtube\.com\/shorts\/[\w-]{11})|(?:youtube\.com\/(?:watch|playlist)\?(?:[^\s]*[?&])?(?:v|list)=[\w-]{11})/i.test(text);
+  return /(?:youtu\.be\/[\w-]{11})|(?:youtube\.com\/shorts\/[\w-]{11})|(?:youtube\.com\/(?:watch|playlist)\?(?:[^\s]*[?&])?(?:v|list)=[\w-]{11})/i.test(
+    text
+  );
 }
 ui.urls.addEventListener('input', () => {
   previewSeq++;
@@ -1022,7 +1497,10 @@ ui.urls.addEventListener('input', () => {
   ui.trackFilter.hidden = true;
   updateDownloadButton();
   clearTimeout(previewDebounce);
-  const urls = ui.urls.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const urls = ui.urls.value
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (!urls.length) {
     resetSourceFormats();
     return;
@@ -1046,7 +1524,7 @@ function addDroppedLinks(event) {
   ui.urls.dispatchEvent(new Event('input'));
   ui.urls.focus();
 }
-ui.urls.addEventListener('dragover', event => {
+ui.urls.addEventListener('dragover', (event) => {
   event.preventDefault();
   ui.urls.classList.add('drag');
 });
@@ -1054,6 +1532,15 @@ ui.urls.addEventListener('dragleave', () => ui.urls.classList.remove('drag'));
 ui.urls.addEventListener('drop', addDroppedLinks);
 
 ui.browse.addEventListener('click', async () => {
+  if (cloud.mode === 'cloud') {
+    ui.browse.disabled = true;
+    try {
+      await chooseSaveDir();
+    } finally {
+      ui.browse.disabled = false;
+    }
+    return;
+  }
   ui.browse.disabled = true;
   try {
     // The browser's showDirectoryPicker() only exposes a folder *name*, not an
@@ -1069,8 +1556,11 @@ ui.browse.addEventListener('click', async () => {
     } else if (result.error) {
       toast(result.error, 'error');
     }
-  } catch (err) { toast(err.message, 'error'); }
-  finally { ui.browse.disabled = false; }
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    ui.browse.disabled = false;
+  }
 });
 
 ui.choose.addEventListener('click', () => {
@@ -1097,18 +1587,18 @@ function setSourceSelection(si, indexes) {
   updateSelectionSummary();
 }
 
-ui.selectionSources.addEventListener('change', event => {
+ui.selectionSources.addEventListener('change', (event) => {
   const input = event.target;
   if (!(input instanceof HTMLInputElement) || !input.classList.contains('source-check')) return;
   const group = input.closest('.source-group');
   const si = Number(group?.dataset.source);
   const source = previewData?.sources[si];
   if (!source) return;
-  setSourceSelection(si, input.checked ? source.entries.map(e => e.index) : []);
+  setSourceSelection(si, input.checked ? source.entries.map((e) => e.index) : []);
 });
 
 function toggleRow(si, source, index, shiftKey) {
-  const positions = source.entries.map(entry => entry.index);
+  const positions = source.entries.map((entry) => entry.index);
   const target = !selected[si].has(index);
   if (shiftKey && rowAnchors.has(si)) {
     const clicked = positions.indexOf(index);
@@ -1129,12 +1619,16 @@ function toggleRow(si, source, index, shiftKey) {
   updateSelectionSummary();
 }
 
-ui.selectionSources.addEventListener('click', event => {
+ui.selectionSources.addEventListener('click', (event) => {
   const selectAll = event.target.closest('[data-select-all]');
   if (selectAll) {
     const si = Number(selectAll.dataset.selectAll);
     const source = previewData?.sources[si];
-    if (source) setSourceSelection(si, source.entries.map(e => e.index));
+    if (source)
+      setSourceSelection(
+        si,
+        source.entries.map((e) => e.index)
+      );
     return;
   }
 
@@ -1149,7 +1643,7 @@ ui.selectionSources.addEventListener('click', event => {
   toggleRow(si, source, index, event.shiftKey);
 });
 
-ui.selectionSources.addEventListener('keydown', event => {
+ui.selectionSources.addEventListener('keydown', (event) => {
   const row = event.target.closest?.('.track-row');
   if (!row || event.target !== row) return;
   if (event.key !== ' ' && event.key !== 'Enter') return;
@@ -1163,14 +1657,14 @@ ui.selectionSources.addEventListener('keydown', event => {
 function applyRangeSelection() {
   if (!previewData?.sources.length) return;
   const text = ui.rangeInput.value;
-  selected = previewData.sources.map(source => parseRange(text, source.entries.length));
+  selected = previewData.sources.map((source) => parseRange(text, source.entries.length));
   rowAnchors.clear();
   previewData.sources.forEach((_, si) => syncGroupSelection(si));
   updateSelectionSummary();
 }
 
 ui.applyRange.addEventListener('click', applyRangeSelection);
-ui.rangeInput.addEventListener('keydown', event => {
+ui.rangeInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     event.preventDefault();
     applyRangeSelection();
@@ -1192,29 +1686,40 @@ ui.pause.addEventListener('click', async () => {
   try {
     await api('/api/pause', { method: 'POST', body: JSON.stringify({ paused: !status.paused }) });
     await refresh();
-  } catch (err) { toast(err.message, 'error'); }
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 });
 
-ui.filmstrip.addEventListener('click', async event => {
+ui.filmstrip.addEventListener('click', async (event) => {
   const button = event.target.closest('button[data-action]');
   if (!button) return;
   const id = button.closest('.tile')?.dataset.job;
-  const job = jobs.find(j => j.id === id);
+  const job = jobs.find((j) => j.id === id);
   if (!job) return;
   if (button.dataset.action === 'open') {
-    try { await api('/api/open', { method: 'POST', body: JSON.stringify({ path: job.folder }) }); }
-    catch (err) { toast(err.message, 'error'); }
+    if (cloud.mode === 'cloud') {
+      downloadOrSaveJob(job);
+    } else {
+      try {
+        await api('/api/open', { method: 'POST', body: JSON.stringify({ path: job.folder }) });
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
   }
   if (button.dataset.action === 'retry') {
     try {
       const result = await api(`/api/jobs/${id}/retry`, { method: 'POST', body: '{}' });
       toast(`Retrying ${result.retried} track${result.retried === 1 ? '' : 's'}.`);
       await refresh();
-    } catch (err) { toast(err.message, 'error'); }
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   }
 });
 
-ui.filmstrip.addEventListener('click', event => {
+ui.filmstrip.addEventListener('click', (event) => {
   const tile = event.target.closest('.tile');
   if (!tile) return;
   if (event.target.closest('button[data-action]')) return;
@@ -1223,21 +1728,30 @@ ui.filmstrip.addEventListener('click', event => {
 
 // Modal
 ui.modalClose.addEventListener('click', closeTrackModal);
-ui.trackModal.addEventListener('click', event => {
+ui.trackModal.addEventListener('click', (event) => {
   if (event.target === ui.trackModal) closeTrackModal();
 });
 
 ui.modalOpenFolder.addEventListener('click', async () => {
-  const job = jobs.find(j => j.id === openModalJobId);
+  const job = jobs.find((j) => j.id === openModalJobId);
   if (!job) return;
-  try { await api('/api/open', { method: 'POST', body: JSON.stringify({ path: job.folder }) }); }
-  catch (err) { toast(err.message, 'error'); }
+  if (cloud.mode === 'cloud') {
+    await downloadOrSaveJob(job);
+    return;
+  }
+  try {
+    await api('/api/open', { method: 'POST', body: JSON.stringify({ path: job.folder }) });
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 });
 
 ui.modalYouTube.addEventListener('click', () => {
-  const job = jobs.find(j => j.id === openModalJobId);
+  const job = jobs.find((j) => j.id === openModalJobId);
   if (!job) return;
-  const url = job.single ? job.url : `https://www.youtube.com/playlist?list=${encodeURIComponent(job.playlistId || '')}`;
+  const url = job.single
+    ? job.url
+    : `https://www.youtube.com/playlist?list=${encodeURIComponent(job.playlistId || '')}`;
   window.open(url, '_blank', 'noopener');
 });
 
@@ -1248,14 +1762,19 @@ ui.modalRetryAll.addEventListener('click', async () => {
     toast(`Retrying ${result.retried} track${result.retried === 1 ? '' : 's'}.`);
     closeTrackModal();
     await refresh();
-  } catch (err) { toast(err.message, 'error'); }
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 });
 
 ui.modalCancel.addEventListener('click', async () => {
   if (!openModalJobId) return;
   const confirmed = await askConfirm({
     title: 'Cancel this download?',
-    message: 'Finished tracks stay on disk.',
+    message:
+      cloud.mode === 'cloud'
+        ? 'Finished tracks stay available until you remove the job.'
+        : 'Finished tracks stay on disk.',
     confirmLabel: 'Cancel download',
     cancelLabel: 'Keep downloading',
     danger: true
@@ -1266,14 +1785,19 @@ ui.modalCancel.addEventListener('click', async () => {
     toast(`Cancelled ${result.cancelled} track${result.cancelled === 1 ? '' : 's'}.`);
     closeTrackModal();
     await refresh();
-  } catch (err) { toast(err.message, 'error'); }
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 });
 
 ui.modalRemove.addEventListener('click', async () => {
   if (!openModalJobId) return;
   const confirmed = await askConfirm({
     title: 'Remove from library?',
-    message: 'Downloaded files stay on disk.',
+    message:
+      cloud.mode === 'cloud'
+        ? 'This deletes the server copies of these files. Files you already saved to your device are not affected.'
+        : 'Downloaded files stay on disk.',
     confirmLabel: 'Remove',
     cancelLabel: 'Keep',
     danger: true
@@ -1286,57 +1810,77 @@ ui.modalRemove.addEventListener('click', async () => {
       await refresh();
       toast('Removed from library.');
     }
-  } catch (err) { toast(err.message, 'error'); }
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 });
 
 ui.cancelButton.addEventListener('click', async () => {
-  const running = jobs.filter(j => j.status === 'running' || j.status === 'queued');
+  const running = jobs.filter((j) => j.status === 'running' || j.status === 'queued');
   if (!running.length) return;
   const confirmed = await askConfirm({
     title: `Cancel ${running.length} active job${running.length === 1 ? '' : 's'}?`,
-    message: 'Finished tracks stay on disk.',
+    message:
+      cloud.mode === 'cloud'
+        ? 'Finished tracks stay available until you remove the jobs.'
+        : 'Finished tracks stay on disk.',
     confirmLabel: 'Cancel jobs',
     cancelLabel: 'Keep downloading',
     danger: true
   });
   if (!confirmed) return;
   for (const job of running) {
-    try { await api(`/api/jobs/${job.id}/cancel`, { method: 'POST', body: '{}' }); }
-    catch (err) { toast(err.message, 'error'); }
+    try {
+      await api(`/api/jobs/${job.id}/cancel`, { method: 'POST', body: '{}' });
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   }
   await refresh();
 });
 
-ui.modalBody.addEventListener('click', async event => {
+ui.modalBody.addEventListener('click', async (event) => {
   const btn = event.target.closest('button[data-action]');
   if (!btn) return;
   const trackId = btn.dataset.track;
-  const job = jobs.find(j => j.id === openModalJobId);
-  const track = job && job.tracks.find(t => t.id === trackId);
+  const job = jobs.find((j) => j.id === openModalJobId);
+  const track = job && job.tracks.find((t) => t.id === trackId);
   if (!track) return;
   if (btn.dataset.action === 'open-file') {
-    try { await api('/api/open', { method: 'POST', body: JSON.stringify({ path: track.file, reveal: true }) }); }
-    catch (err) { toast(err.message, 'error'); }
+    if (cloud.mode === 'cloud') {
+      await downloadOrSaveTrack(job, track);
+      return;
+    }
+    try {
+      await api('/api/open', { method: 'POST', body: JSON.stringify({ path: track.file, reveal: true }) });
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   }
   if (btn.dataset.action === 'retry-track') {
     try {
-      const result = await api(`/api/jobs/${job.id}/retry`, { method: 'POST', body: JSON.stringify({ trackId: track.id }) });
+      const result = await api(`/api/jobs/${job.id}/retry`, {
+        method: 'POST',
+        body: JSON.stringify({ trackId: track.id })
+      });
       toast(`Retrying ${result.retried} track${result.retried === 1 ? '' : 's'}.`);
       await refresh();
-    } catch (err) { toast(err.message, 'error'); }
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   }
   if (btn.dataset.action === 'edit-tags') {
     const row = btn.closest('.track-detail');
-    row.querySelectorAll('[data-field]').forEach(el => el.hidden = true);
-    row.querySelectorAll('[data-edit]').forEach(el => el.hidden = false);
+    row.querySelectorAll('[data-field]').forEach((el) => (el.hidden = true));
+    row.querySelectorAll('[data-edit]').forEach((el) => (el.hidden = false));
     btn.hidden = true;
     row.querySelector('[data-action="save-tags"]').hidden = false;
     row.querySelector('[data-action="cancel-edit"]').hidden = false;
   }
   if (btn.dataset.action === 'cancel-edit') {
     const row = btn.closest('.track-detail');
-    row.querySelectorAll('[data-field]').forEach(el => el.hidden = false);
-    row.querySelectorAll('[data-edit]').forEach(el => el.hidden = true);
+    row.querySelectorAll('[data-field]').forEach((el) => (el.hidden = false));
+    row.querySelectorAll('[data-edit]').forEach((el) => (el.hidden = true));
     btn.hidden = true;
     row.querySelector('[data-action="save-tags"]').hidden = true;
     row.querySelector('[data-action="edit-tags"]').hidden = false;
@@ -1345,43 +1889,62 @@ ui.modalBody.addEventListener('click', async event => {
     const row = btn.closest('.track-detail');
     const titleInput = row.querySelector('[data-edit="title"]');
     const artistInput = row.querySelector('[data-edit="artist"]');
+    const tags = { title: titleInput.value, artist: artistInput.value };
     try {
-      await api('/api/tags/edit', {
-        method: 'POST',
-        body: JSON.stringify({
-          file: track.file,
-          tags: { title: titleInput.value, artist: artistInput.value }
-        })
-      });
+      if (cloud.mode === 'cloud') {
+        await api(`/api/jobs/${job.id}/tracks/${track.id}/tags`, {
+          method: 'POST',
+          body: JSON.stringify({ tags })
+        });
+      } else {
+        await api('/api/tags/edit', {
+          method: 'POST',
+          body: JSON.stringify({ file: track.file, tags })
+        });
+      }
       row.querySelector('[data-field="title"]').textContent = titleInput.value;
-      row.querySelector('[data-field="artist"]').textContent = `${artistInput.value}, #${String(track.index).padStart(2, '0')}`;
-      row.querySelectorAll('[data-field]').forEach(el => el.hidden = false);
-      row.querySelectorAll('[data-edit]').forEach(el => el.hidden = true);
+      row.querySelector('[data-field="artist"]').textContent =
+        `${artistInput.value}, #${String(track.index).padStart(2, '0')}`;
+      row.querySelectorAll('[data-field]').forEach((el) => (el.hidden = false));
+      row.querySelectorAll('[data-edit]').forEach((el) => (el.hidden = true));
       btn.hidden = true;
       row.querySelector('[data-action="cancel-edit"]').hidden = true;
       row.querySelector('[data-action="edit-tags"]').hidden = false;
       toast('Tags saved.');
-    } catch (err) { toast(err.message, 'error'); }
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   }
 });
 
 // Toolbar
-ui.librarySearch.addEventListener('input', () => { lastFilmstripSig = ''; renderLibrary(); });
-ui.libraryFilter.addEventListener('change', () => { lastFilmstripSig = ''; renderLibrary(); });
-ui.librarySort.addEventListener('change', () => { lastFilmstripSig = ''; renderLibrary(); });
+ui.librarySearch.addEventListener('input', () => {
+  lastFilmstripSig = '';
+  renderLibrary();
+});
+ui.libraryFilter.addEventListener('change', () => {
+  lastFilmstripSig = '';
+  renderLibrary();
+});
+ui.librarySort.addEventListener('change', () => {
+  lastFilmstripSig = '';
+  renderLibrary();
+});
 
 ui.exportButton.addEventListener('click', exportHistory);
 ui.clearCacheButton.addEventListener('click', async () => {
   try {
     const result = await api('/api/cache/clear', { method: 'POST', body: '{}' });
     toast(`Cleared ${result.removed} cached playlist${result.removed === 1 ? '' : 's'}.`);
-  } catch (err) { toast(err.message, 'error'); }
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 });
 
 // Cancel a job from the activity panel
 function renderAudioFormatList(list) {
   ui.formatSelect.innerHTML = list
-    .map(f => `<option value="${escapeAttr(f.key)}">${escapeHtml(f.label)}</option>`)
+    .map((f) => `<option value="${escapeAttr(f.key)}">${escapeHtml(f.label)}</option>`)
     .join('');
   if (status.format) ui.formatSelect.value = status.format;
   ui.formatSelect._syncMenu?.();
@@ -1390,9 +1953,9 @@ function renderAudioFormatList(list) {
 function renderVideoFormatList(list) {
   // "Best quality" and the generic source entry stay in the engine for jobs
   // made before the ladder existed. The picker only offers real heights.
-  const options = list.filter(f => f.key !== 'best' && f.key !== 'source');
+  const options = list.filter((f) => f.key !== 'best' && f.key !== 'source');
   ui.videoFormatSelect.innerHTML = options
-    .map(f => `<option value="${escapeAttr(f.key)}">${escapeHtml(f.label)}</option>`)
+    .map((f) => `<option value="${escapeAttr(f.key)}">${escapeHtml(f.label)}</option>`)
     .join('');
   // 1080p is the sensible default; 4K stays one click away.
   if (ui.videoFormatSelect.querySelector('option[value="1080p"]')) ui.videoFormatSelect.value = '1080p';
@@ -1419,14 +1982,15 @@ async function loadVideoFormats() {
 // in place keeps the list scroll position.
 function updateSelectionNouns() {
   const noun = status.isVideo ? 'video' : 'track';
-  ui.selectionSources.querySelectorAll('.source-meta').forEach(meta => {
+  ui.selectionSources.querySelectorAll('.source-meta').forEach((meta) => {
     const count = Number(meta.dataset.count) || 0;
     const cached = meta.dataset.cached === '1' ? ' (cached)' : '';
-    meta.textContent = meta.dataset.single === '1'
-      ? `Single video${cached}`
-      : `${count} ${noun}${count === 1 ? '' : 's'}${cached}`;
+    meta.textContent =
+      meta.dataset.single === '1'
+        ? `Single video${cached}`
+        : `${count} ${noun}${count === 1 ? '' : 's'}${cached}`;
   });
-  ui.selectionSources.querySelectorAll('.source-group').forEach(group => {
+  ui.selectionSources.querySelectorAll('.source-group').forEach((group) => {
     updateGroupBadges(Number(group.dataset.source));
   });
 }
@@ -1457,7 +2021,7 @@ ui.modeVideo.addEventListener('click', () => setMode(true));
 const selectMenuState = { close: null };
 
 function initSelectMenus() {
-  document.querySelectorAll('select').forEach(select => {
+  document.querySelectorAll('select').forEach((select) => {
     if (select.dataset.enhanced === 'true') return;
     select.dataset.enhanced = 'true';
 
@@ -1478,12 +2042,12 @@ function initSelectMenus() {
     const labelEl = select.id ? document.querySelector(`label[for="${CSS.escape(select.id)}"]`) : null;
     const baseName = labelEl
       ? labelEl.textContent.trim()
-      : (select.getAttribute('aria-label') || select.id || 'Choose');
+      : select.getAttribute('aria-label') || select.id || 'Choose';
     if (labelEl) {
       if (!labelEl.id) labelEl.id = `${select.id}Label`;
       labelEl.setAttribute('for', triggerId);
     }
-    const setTriggerName = text => {
+    const setTriggerName = (text) => {
       trigger.setAttribute('aria-label', text ? `${baseName}: ${text}` : baseName);
     };
 
@@ -1494,7 +2058,8 @@ function initSelectMenus() {
     chevron.setAttribute('class', 'select-chevron');
     chevron.setAttribute('viewBox', '0 0 12 12');
     chevron.setAttribute('aria-hidden', 'true');
-    chevron.innerHTML = '<path fill="currentColor" d="M6 9.3 3.7 7a.75.75 0 0 1 1.06-1.06L6 7.19l1.24-1.24A.75.75 0 0 1 8.3 7L6 9.31Z"/>';
+    chevron.innerHTML =
+      '<path fill="currentColor" d="M6 9.3 3.7 7a.75.75 0 0 1 1.06-1.06L6 7.19l1.24-1.24A.75.75 0 0 1 8.3 7L6 9.31Z"/>';
 
     trigger.append(valueEl, chevron);
 
@@ -1519,7 +2084,7 @@ function initSelectMenus() {
     function setActive(index) {
       const items = Array.from(menu.children);
       if (!items.length) return;
-      items.forEach(el => el.classList.remove('active'));
+      items.forEach((el) => el.classList.remove('active'));
       activeIndex = index;
       const el = items[index];
       if (!el) return;
@@ -1560,7 +2125,8 @@ function initSelectMenus() {
         check.setAttribute('class', 'check');
         check.setAttribute('viewBox', '0 0 13 13');
         check.setAttribute('aria-hidden', 'true');
-        check.innerHTML = '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m2.5 6.8 2.6 2.6 5.4-5.6"/>';
+        check.innerHTML =
+          '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m2.5 6.8 2.6 2.6 5.4-5.6"/>';
 
         item.append(label, check);
         item.addEventListener('click', () => choose(opt.value));
@@ -1576,7 +2142,7 @@ function initSelectMenus() {
     }
 
     function choose(value) {
-      const opt = options().find(o => o.value === value);
+      const opt = options().find((o) => o.value === value);
       if (!opt || opt.disabled) return;
       select.value = value;
       select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1602,7 +2168,7 @@ function initSelectMenus() {
       menu.hidden = false;
       trigger.setAttribute('aria-expanded', 'true');
       position();
-      const selectedIndex = options().findIndex(o => o.value === select.value && !o.disabled);
+      const selectedIndex = options().findIndex((o) => o.value === select.value && !o.disabled);
       if (selectedIndex >= 0) setActive(selectedIndex);
       selectMenuState.close = close;
       document.addEventListener('pointerdown', onPointerDown, true);
@@ -1616,7 +2182,7 @@ function initSelectMenus() {
       menu.hidden = true;
       trigger.setAttribute('aria-expanded', 'false');
       trigger.removeAttribute('aria-activedescendant');
-      menu.querySelectorAll('.active').forEach(el => el.classList.remove('active'));
+      menu.querySelectorAll('.active').forEach((el) => el.classList.remove('active'));
       activeIndex = -1;
       if (selectMenuState.close === close) selectMenuState.close = null;
       document.removeEventListener('pointerdown', onPointerDown, true);
@@ -1635,12 +2201,36 @@ function initSelectMenus() {
     }
 
     function onKeyDown(event) {
-      if (event.key === 'Escape') { event.preventDefault(); close(); trigger.focus(); return; }
-      if (event.key === 'Tab') { close(); return; }
-      if (event.key === 'ArrowDown') { event.preventDefault(); moveActive(1); return; }
-      if (event.key === 'ArrowUp') { event.preventDefault(); moveActive(-1); return; }
-      if (event.key === 'Home') { event.preventDefault(); setActive(0); return; }
-      if (event.key === 'End') { event.preventDefault(); setActive(menu.children.length - 1); return; }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+        trigger.focus();
+        return;
+      }
+      if (event.key === 'Tab') {
+        close();
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveActive(1);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveActive(-1);
+        return;
+      }
+      if (event.key === 'Home') {
+        event.preventDefault();
+        setActive(0);
+        return;
+      }
+      if (event.key === 'End') {
+        event.preventDefault();
+        setActive(menu.children.length - 1);
+        return;
+      }
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         const el = menu.children[activeIndex];
@@ -1655,16 +2245,21 @@ function initSelectMenus() {
           const index = (start + n) % items.length;
           const el = items[index];
           if (el.getAttribute('aria-disabled') === 'true') continue;
-          if (el.textContent.trim().toLowerCase().startsWith(ch)) { event.preventDefault(); setActive(index); break; }
+          if (el.textContent.trim().toLowerCase().startsWith(ch)) {
+            event.preventDefault();
+            setActive(index);
+            break;
+          }
         }
       }
     }
 
     trigger.addEventListener('click', () => {
-      if (menu.hidden) open(); else close();
+      if (menu.hidden) open();
+      else close();
     });
 
-    trigger.addEventListener('keydown', event => {
+    trigger.addEventListener('keydown', (event) => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         if (menu.hidden) open();
@@ -1672,7 +2267,12 @@ function initSelectMenus() {
     });
 
     const observer = new MutationObserver(render);
-    observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'label'] });
+    observer.observe(select, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['disabled', 'label']
+    });
 
     select._syncMenu = render;
     render();
@@ -1709,23 +2309,32 @@ function initLibraryMenu() {
   }
 
   function onDocKey(event) {
-    if (event.key === 'Escape') { event.preventDefault(); close(true); return; }
-    if (event.key === 'Tab') { close(); return; }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close(true);
+      return;
+    }
+    if (event.key === 'Tab') {
+      close();
+      return;
+    }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
     event.preventDefault();
     const list = items();
     const index = list.indexOf(document.activeElement);
-    const next = event.key === 'ArrowDown'
-      ? (index + 1) % list.length
-      : (index - 1 + list.length) % list.length;
+    const next =
+      event.key === 'ArrowDown' ? (index + 1) % list.length : (index - 1 + list.length) % list.length;
     list[next].focus();
   }
 
   button.addEventListener('click', () => (menu.hidden ? open() : close(true)));
-  button.addEventListener('keydown', event => {
-    if (event.key === 'ArrowDown' && menu.hidden) { event.preventDefault(); open(); }
+  button.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown' && menu.hidden) {
+      event.preventDefault();
+      open();
+    }
   });
-  menu.addEventListener('click', event => {
+  menu.addEventListener('click', (event) => {
     if (event.target.closest('[role="menuitem"]')) close();
   });
 }
@@ -1736,12 +2345,21 @@ initLibraryMenu();
 buildWave();
 loadFormats();
 loadVideoFormats();
-refresh().then(() => {
-  applyMode();
-  maybeAskCookieChoice();
-});
-connectEvents();
-setInterval(() => { refresh(); }, 3000);
+bootstrapped
+  .then(() => refresh())
+  .then(() => {
+    applyMode();
+    maybeAskCookieChoice();
+    if (cloud.mode === 'cloud') loadSaveHandle();
+    connectEvents();
+  });
+setInterval(() => {
+  refresh();
+}, 3000);
 // Re-check the moment the tab regains focus (e.g. after deleting folders in Explorer).
-window.addEventListener('focus', () => { refresh(); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+window.addEventListener('focus', () => {
+  refresh();
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refresh();
+});

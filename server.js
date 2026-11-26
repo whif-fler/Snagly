@@ -6,16 +6,11 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { createHash } = require('crypto');
 const engine = require('./engine');
-const {
-  parseYouTubeUrl,
-  parseThumbnailUrl,
-  isPathInside,
-  safeJsonParse
-} = require('./lib/util');
+const { parseYouTubeUrl, parseThumbnailUrl, isPathInside, safeJsonParse } = require('./lib/util');
 
 const PORT = Number(process.env.REEL_PORT) || 4173;
 const HOST = '127.0.0.1';
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const PUBLIC_DIR = path.join(__dirname, 'apps', 'web', 'public');
 const MAX_BODY_BYTES = 2_000_000;
 const THUMB_DIR = path.join(engine.dataDir(), 'cache', 'thumbs');
 const MAX_THUMB_BYTES = 5 * 1024 * 1024;
@@ -49,11 +44,7 @@ const CSP = [
   "frame-ancestors 'none'"
 ].join('; ');
 
-const ALLOWED_HOSTS = new Set([
-  `127.0.0.1:${PORT}`,
-  `localhost:${PORT}`,
-  `[::1]:${PORT}`
-]);
+const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`]);
 
 function securityHeaders(res) {
   res.setHeader('Content-Security-Policy', CSP);
@@ -102,7 +93,9 @@ function findCachedThumb(key) {
     const file = path.join(THUMB_DIR, `${key}${ext}`);
     try {
       if (fs.existsSync(file)) return { file, ext };
-    } catch { /* try the next extension */ }
+    } catch {
+      /* try the next extension */
+    }
   }
   return null;
 }
@@ -126,7 +119,10 @@ async function serveThumb(req, res, raw) {
       headers: { 'User-Agent': 'Snagly/1.1 (local playlist downloader)' }
     });
     if (!upstream.ok) return sendJson(res, 404, { error: 'Thumbnail unavailable' });
-    const type = String(upstream.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
+    const type = String(upstream.headers.get('content-type') || '')
+      .toLowerCase()
+      .split(';')[0]
+      .trim();
     const ext = IMAGE_EXT_BY_TYPE[type];
     if (!ext) return sendJson(res, 404, { error: 'Not an image' });
     if (Number(upstream.headers.get('content-length') || 0) > MAX_THUMB_BYTES) {
@@ -150,15 +146,15 @@ async function serveThumb(req, res, raw) {
 }
 
 function readBody(req) {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     let body = '';
     let done = false;
-    const finish = value => {
+    const finish = (value) => {
       if (done) return;
       done = true;
       resolve(value);
     };
-    req.on('data', chunk => {
+    req.on('data', (chunk) => {
       body += chunk;
       if (body.length > MAX_BODY_BYTES) {
         req.destroy();
@@ -231,12 +227,15 @@ function rateLimit(req, res, name, limit, windowMs) {
   }
   return true;
 }
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, bucket] of buckets) {
-    if (now - bucket.start > 60 * 60 * 1000) buckets.delete(key);
-  }
-}, 60 * 60 * 1000).unref();
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [key, bucket] of buckets) {
+      if (now - bucket.start > 60 * 60 * 1000) buckets.delete(key);
+    }
+  },
+  60 * 60 * 1000
+).unref();
 
 function youtubeLinks(values) {
   const urls = [];
@@ -294,13 +293,15 @@ function openPath(target, reveal, res) {
     return sendJson(res, 403, { error: 'Path is outside the library' });
   }
   let stat;
-  try { stat = fs.statSync(resolved); } catch {
+  try {
+    stat = fs.statSync(resolved);
+  } catch {
     return sendJson(res, 404, { error: 'Path does not exist' });
   }
 
   const args = reveal && stat.isFile() ? ['/select,', resolved] : [resolved];
   const child = spawn('explorer.exe', args, { detached: true, stdio: 'ignore' });
-  child.on('error', err => console.error('Could not open Explorer:', err.message));
+  child.on('error', (err) => console.error('Could not open Explorer:', err.message));
   child.unref();
   return sendJson(res, 200, { ok: true });
 }
@@ -335,29 +336,38 @@ function pickFolder(current, res) {
   let stdout = '';
   let stderr = '';
   let responded = false;
-  const reply = payload => {
+  const reply = (payload) => {
     if (responded) return;
     responded = true;
     sendJson(res, 200, payload);
   };
-  const fail = message => {
+  const fail = (message) => {
     if (responded) return;
     responded = true;
     sendJson(res, 500, { error: message });
   };
 
-  const timer = setTimeout(() => {
-    try { child.kill(); } catch {}
-    reply({ path: null, error: 'The folder picker timed out' });
-  }, 5 * 60 * 1000);
+  const timer = setTimeout(
+    () => {
+      try {
+        child.kill();
+      } catch {}
+      reply({ path: null, error: 'The folder picker timed out' });
+    },
+    5 * 60 * 1000
+  );
 
-  child.stdout.on('data', chunk => { if (stdout.length < 4096) stdout += chunk.toString(); });
-  child.stderr.on('data', chunk => { if (stderr.length < 4096) stderr += chunk.toString(); });
-  child.on('error', err => {
+  child.stdout.on('data', (chunk) => {
+    if (stdout.length < 4096) stdout += chunk.toString();
+  });
+  child.stderr.on('data', (chunk) => {
+    if (stderr.length < 4096) stderr += chunk.toString();
+  });
+  child.on('error', (err) => {
     clearTimeout(timer);
     fail(err.message);
   });
-  child.on('close', code => {
+  child.on('close', (code) => {
     clearTimeout(timer);
     const chosen = stdout.trim();
     if (code === 0 && chosen) return reply({ path: chosen });
@@ -382,7 +392,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
       'X-Accel-Buffering': 'no'
     });
     engine.addSSE(res);
@@ -435,7 +445,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/jobs') {
     if (!rateLimit(req, res, 'jobs', 20, 60_000)) return;
     const body = await readBody(req);
-    const rawItems = Array.isArray(body.items) ? body.items : (Array.isArray(body.urls) ? body.urls : [body.url]);
+    const rawItems = Array.isArray(body.items)
+      ? body.items
+      : Array.isArray(body.urls)
+        ? body.urls
+        : [body.url];
     if (rawItems.length > 50) return sendJson(res, 400, { error: 'Too many links at once' });
 
     const items = [];
@@ -443,9 +457,15 @@ const server = http.createServer(async (req, res) => {
     for (const item of rawItems) {
       const object = typeof item === 'string' ? { url: item } : item;
       const parsed = parseYouTubeUrl(String(object?.url || '').trim());
-      if (!parsed) { invalid = true; continue; }
+      if (!parsed) {
+        invalid = true;
+        continue;
+      }
       const selected = Array.isArray(object?.selected)
-        ? object.selected.slice(0, 5000).map(Number).filter(n => Number.isInteger(n) && n >= 1 && n <= 100000)
+        ? object.selected
+            .slice(0, 5000)
+            .map(Number)
+            .filter((n) => Number.isInteger(n) && n >= 1 && n <= 100000)
         : null;
       items.push({ url: parsed.toString(), selected });
     }
@@ -454,12 +474,15 @@ const server = http.createServer(async (req, res) => {
 
     const isVideo = Boolean(body.isVideo);
     const format = String(body.format || (isVideo ? '1080p' : 'mp3'));
-    const validFormats = new Set((isVideo ? engine.videoFormats() : engine.formats()).map(f => f.key));
+    const validFormats = new Set((isVideo ? engine.videoFormats() : engine.formats()).map((f) => f.key));
     if (!validFormats.has(format)) return sendJson(res, 400, { error: 'Unknown quality option' });
 
     if (body.root !== undefined) {
-      try { engine.prepareRoot(body.root); }
-      catch (err) { return sendJson(res, 400, { error: err.message }); }
+      try {
+        engine.prepareRoot(body.root);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message });
+      }
     }
 
     try {
@@ -498,7 +521,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const result = engine.removeJob(id);
       if (result === 'missing') return sendJson(res, 404, { error: 'Job not found' });
-      if (result === 'running') return sendJson(res, 409, { error: 'Job is still downloading. Cancel it first' });
+      if (result === 'running')
+        return sendJson(res, 409, { error: 'Job is still downloading. Cancel it first' });
       return sendJson(res, 200, { ok: true });
     } catch (err) {
       return sendJson(res, 500, { error: err.message });
@@ -597,7 +621,7 @@ server.on('clientError', (err, socket) => {
   if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
 });
 
-server.on('error', err => {
+server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`\n  Port ${PORT} is already in use.`);
     console.error(`  Close the other Snagly window, or start with: $env:REEL_PORT = 5000; node server.js\n`);
@@ -617,7 +641,11 @@ let shuttingDown = false;
 function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
-  try { engine.shutdown(); } catch (err) { console.error('Shutdown error:', err.message); }
+  try {
+    engine.shutdown();
+  } catch (err) {
+    console.error('Shutdown error:', err.message);
+  }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
 }
