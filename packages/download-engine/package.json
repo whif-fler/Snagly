@@ -1,0 +1,6 @@
+{
+  "name": "@snagly/download-engine",
+  "version": "2.0.0",
+  "private": true,
+  "main": "index.js"
+}

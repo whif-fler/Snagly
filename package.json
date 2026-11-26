@@ -1,22 +1,41 @@
 {
   "name": "snagly",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "A local web app that turns YouTube playlists into a tagged music library or MP4 video up to 4K.",
+  "description": "Snagly turns YouTube playlists into a tagged music library, locally or as a self-hosted multi-user web app.",
   "main": "server.js",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "start": "node server.js",
-    "test": "node --test",
-    "check": "node --check server.js && node --check engine.js && node --check lib/util.js && node --check public/app.js && node --check public/privacy.js"
+    "start:local": "node server.js",
+    "start:web": "node apps/server/src/main.js",
+    "dev:web": "node --watch apps/server/src/main.js",
+    "test": "node --test \"test/**/*.test.js\" \"tests/**/*.test.js\"",
+    "test:coverage": "node --test --experimental-test-coverage \"test/**/*.test.js\" \"tests/**/*.test.js\"",
+    "check": "node scripts/check-syntax.js",
+    "lint": "eslint .",
+    "format": "prettier --write \"apps/**/*.js\" \"packages/**/*.js\" \"tests/**/*.js\" \"scripts/**/*.js\" \"lib/**/*.js\" \"*.js\" \"*.md\" \"docs/**/*.md\"",
+    "format:check": "prettier --check \"apps/**/*.js\" \"packages/**/*.js\" \"tests/**/*.js\" \"scripts/**/*.js\" \"lib/**/*.js\" \"*.js\" \"*.md\" \"docs/**/*.md\"",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "eslint": "^10.15.0",
+    "prettier": "^3.10.1",
+    "typescript": "^7.0.2"
   },
   "keywords": [
     "youtube",
     "playlist",
     "mp3",
     "yt-dlp",
-    "ffmpeg"
+    "ffmpeg",
+    "self-hosted"
   ]
 }

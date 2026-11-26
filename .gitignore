@@ -1,11 +1,29 @@
 # Runtime data: job state, downloaded-track records, playlist cache
 data/
 
+# Cloud runtime data (SQLite, per-user media, thumbnails, signing secret)
+data/cloud/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.download-secret
+
 # Exported browser cookies. These are credentials; never commit them.
 cookies.txt
 
-# Node (the app has no dependencies, but be safe)
+# Environment files may contain secrets. The example is committed.
+.env
+.env.*
+!.env.example
+
+# Node
 node_modules/
+coverage/
+dist/
+
+# Backup archives (contain the database, media and signing secret)
+backups/
+snagly-data-*.tar.gz
 
 # Logs
 *.log

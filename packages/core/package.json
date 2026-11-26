@@ -1,0 +1,8 @@
+{
+  "name": "@snagly/core",
+  "version": "2.0.0",
+  "private": true,
+  "main": "index.js",
+  "types": "index.d.ts",
+  "description": "Framework-free validation, naming, selection and archive primitives."
+}
