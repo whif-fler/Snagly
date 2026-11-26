@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawn, execFile } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
 const { promisify } = require('util');
 const { randomUUID } = require('crypto');
 const {
@@ -17,10 +17,13 @@ const {
 
 const execFileAsync = promisify(execFile);
 
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.SNAGLY_DATA_DIR
+  ? path.resolve(process.env.SNAGLY_DATA_DIR)
+  : path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const STATE_BACKUP = path.join(DATA_DIR, 'state.backup.json');
 const CACHE_DIR = path.join(DATA_DIR, 'cache');
+const COOKIES_FILE = path.join(__dirname, 'cookies.txt');
 const MAX_PROCESS_OUTPUT = 64 * 1024 * 1024;
 const MAX_SSE_CLIENTS = 10;
 const MEDIA_FILE_RE = /\.(mp3|m4a|aac|flac|opus|ogg|oga|wav|webm|mp4|mkv|mov|m4v)$/i;
@@ -255,6 +258,17 @@ function saveStateNow() {
   try { writeStateFile(); } catch (err) { console.error('Snagly could not save state:', err.message); }
 }
 
+function cookieSource() {
+  try { if (fs.existsSync(COOKIES_FILE)) return 'file'; } catch { /* ignore */ }
+  return tools.browser ? 'browser' : null;
+}
+
+function cookieArgs() {
+  if (!state.useCookies) return [];
+  if (cookieSource() === 'file') return ['--cookies', COOKIES_FILE];
+  return tools.browser ? ['--cookies-from-browser', tools.browser] : [];
+}
+
 function discoverTools() {
   const wingetRoot = path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'WinGet', 'Packages');
   let yt = '';
@@ -377,8 +391,9 @@ async function extractPlaylist(url) {
   // Reading Chrome's cookie database costs several seconds per yt-dlp run,
   // and most public links do not need it. Try plain first, then sign in.
   const baseArgs = ['--flat-playlist', '--dump-single-json', '--no-warnings', '--skip-download', url];
-  const attempts = state.useCookies && tools.browser
-    ? [baseArgs, [...baseArgs, '--cookies-from-browser', tools.browser]]
+  const extra = cookieArgs();
+  const attempts = extra.length
+    ? [baseArgs, [...baseArgs, ...extra]]
     : [baseArgs];
   let r;
   for (const args of attempts) {
@@ -388,10 +403,10 @@ async function extractPlaylist(url) {
   if (r.code !== 0) {
     const stderr = String(r.stderr || '').trim();
     if (/could not copy chrome cookie|cookie database/i.test(stderr)) {
-      return { error: 'Browser cookies are locked because the browser is running. Close the browser and try again, or turn off browser sign-in.' };
+      return { error: 'Browser cookies are locked because the browser is running. Close the browser and try again, or add a cookies.txt file next to server.js.' };
     }
     if (/sign in to confirm|not a bot/i.test(stderr)) {
-      return { error: 'YouTube asked for a sign-in check. Turn on browser sign-in in the composer and try again.' };
+      return { error: 'YouTube asked for a sign-in check. Turn on Use YouTube sign-in in the composer and try again.' };
     }
     return { error: stderr.slice(-600) };
   }
@@ -519,8 +534,9 @@ async function probeFormats(url) {
     '--playlist-items', '1', '--skip-download', '--no-warnings',
     '--print', '%(formats)j', url
   ];
-  const attempts = state.useCookies && tools.browser
-    ? [baseArgs, [...baseArgs, '--cookies-from-browser', tools.browser]]
+  const extra = cookieArgs();
+  const attempts = extra.length
+    ? [baseArgs, [...baseArgs, ...extra]]
     : [baseArgs];
   let r;
   for (const args of attempts) {
@@ -845,7 +861,7 @@ function buildArgs(job, track, withCookies) {
     '-o', outTemplate,
     `https://www.youtube.com/watch?v=${track.id}`
   ];
-  if (withCookies && tools.browser) args.push('--cookies-from-browser', tools.browser);
+  if (withCookies) args.push(...cookieArgs());
   return { args, isVideo, fmt };
 }
 
@@ -1000,7 +1016,7 @@ async function processTrack(job, track) {
   broadcast();
 
   const isVideo = Boolean(job.isVideo);
-  const useCookies = state.useCookies && Boolean(tools.browser);
+  const useCookies = state.useCookies && Boolean(cookieSource());
   const onStdout = trackProgressParser(track);
   const built = buildArgs(job, track, useCookies);
   let result = await runProcess(tools.yt, built.args, 600000, onStdout, track.id);
@@ -1024,7 +1040,7 @@ async function processTrack(job, track) {
       emit({
         type: 'notice',
         message: cookiesLocked
-          ? 'Browser cookies were locked (is the browser running?). Continuing without browser sign-in.'
+          ? 'Browser cookies were locked (is the browser running?). Continuing without sign-in. A cookies.txt file avoids this.'
           : 'Browser cookies were unavailable. Continuing without browser sign-in.'
       });
     }
@@ -1292,6 +1308,7 @@ function getStatus() {
     workers: effectiveWorkers(),
     configuredWorkers: state.workers,
     useCookies: state.useCookies,
+    cookieSource: cookieSource(),
     paused: state.paused,
     active: activeCount,
     penaltyMs,
@@ -1299,8 +1316,49 @@ function getStatus() {
   };
 }
 
+// Windows-only: keep data/ readable only by this account (plus SYSTEM and
+// Administrators, so backup/repair tools still work). This replaces explicitly
+// granted broad ACEs too, which `icacls /inheritance:r` alone would leave in
+// place. Silently skips FAT/exFAT and policies that ignore ACL changes.
+const ACL_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+$target = $env:SNAGLY_ACL_PATH
+$di = New-Object System.IO.DirectoryInfo($target)
+$acl = New-Object System.Security.AccessControl.DirectorySecurity
+$acl.SetAccessRuleProtection($true, $false)
+$inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+$prop = [System.Security.AccessControl.PropagationFlags]::None
+$allow = [System.Security.AccessControl.AccessControlType]::Allow
+$owner = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$system = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18')
+$admins = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
+foreach ($sid in @($owner, $system, $admins)) {
+  $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inherit, $prop, $allow)))
+}
+$di.SetAccessControl($acl)
+`;
+
+function restrictDataPermissions() {
+  if (process.platform !== 'win32') return;
+  try {
+    execFileSync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ACL_SCRIPT
+    ], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 20000,
+      env: { ...process.env, SNAGLY_ACL_PATH: DATA_DIR }
+    });
+  } catch (err) {
+    if (process.env.SNAGLY_DEBUG) {
+      console.error('Snagly could not restrict data permissions:', err.stderr?.toString() || err.message);
+    }
+  }
+}
+
 function init() {
   loadState();
+  restrictDataPermissions();
   discoverTools();
   reconcileLibrary(true);
   saveStateNow();
@@ -1322,6 +1380,7 @@ module.exports = {
   init, getStatus, createJobs, previewSources, probeFormats, publicJobs, addSSE, retryJob, setPaused,
   setWorkers, setUseCookies, setIsVideo, removeJob, cancelJob, clearCache, getHistory, editTags,
   saveStateNow, pump, shutdown, tools: () => tools, reconcileLibrary, isLibraryPath, prepareRoot,
+  dataDir: () => DATA_DIR, cookieSource,
   formats: () => Object.entries(FORMATS).map(([k, v]) => ({ key: k, ...v })),
   videoFormats: () => Object.entries(VIDEO_FORMATS).map(([k, v]) => ({ key: k, ...v })),
   _test: { sanitizeFolder, parseExtraction, findTrackFile, findExisting, buildArgs, prepareRoot, mediaMatcher, FORMATS, VIDEO_FORMATS }

@@ -58,7 +58,7 @@ There is no npm install and no build step.
 
 **Small things**
 - Light and dark themes
-- Browser sign-in is optional and off until you allow it; Snagly asks once,
+- YouTube sign-in is optional and off until you allow it; Snagly asks once,
   then remembers your choice in the composer (Chrome, Edge or Firefox)
 - Drag a link or drop selected text onto the link box
 - Desktop notification when a batch finishes while the tab is in the background
@@ -120,19 +120,24 @@ again skips anything that already exists.
 ## Privacy
 
 Snagly has no account, no analytics, no telemetry and no developer server. It
-sets no cookies, and the only outbound requests are the YouTube links you paste
-(through `yt-dlp`) and YouTube thumbnails loaded by your browser.
+sets no cookies. Outbound requests are the YouTube links you paste (through
+`yt-dlp`) and cover art fetched by the local server from YouTube's image hosts,
+then cached under `data/cache/thumbs/`. Your browser only connects to
+`127.0.0.1`, so it never talks to Google directly.
 
-Browser sign-in is optional and off until you allow it. When enabled, `yt-dlp`
+YouTube sign-in is optional and off until you allow it. When enabled, `yt-dlp`
 reads the YouTube cookies already stored in your local Chrome, Edge or Firefox
 profile so it can get past "confirm you're not a bot" checks. Those cookies are
 used only for YouTube requests and are never written into Snagly's state or
 sent anywhere else. The composer toggle turns it on or off at any time, and
-Snagly asks once on first visit.
+Snagly asks once on first visit. If the browser database is locked, an optional
+Netscape-format `cookies.txt` beside `server.js` takes priority; it is gitignored
+and never uploaded.
 
 Everything Snagly remembers lives in `data/` beside `server.js`: playlist and
-track titles, file paths, sizes, timestamps and settings. Delete that folder to
-erase it. Downloaded media stays in the folder you chose.
+track titles, file paths, sizes, timestamps and settings. On NTFS, Snagly limits
+that folder to your Windows account. Delete it to erase the records. Downloaded
+media stays in the folder you chose.
 
 The full policy is in [PRIVACY.md](PRIVACY.md) and in the app at `/privacy`.
 
@@ -145,9 +150,9 @@ built-in runner:
 npm test
 ```
 
-This covers URL validation, path containment, prototype-pollution-safe JSON
-parsing, tag sanitising, folder-name sanitising, format presets and the
-download-file lookup that detects existing tracks.
+This covers URL validation, thumbnail-host validation, path containment,
+prototype-pollution-safe JSON parsing, tag sanitising, folder-name sanitising,
+format presets and the download-file lookup that detects existing tracks.
 
 ## How it works
 
@@ -182,7 +187,8 @@ down automatically if YouTube pushes back.
 | `start.bat` | Windows launcher |
 | `DESIGN.md` | Visual direction and design decisions |
 | `data/state.json` | Jobs and the record of downloaded tracks (created at runtime, git-ignored) |
-| `data/cache/` | Cached playlist metadata and format probes (git-ignored) |
+| `data/cache/` | Cached playlist metadata, format probes and thumbnail images (created at runtime, git-ignored) |
+| `cookies.txt` | Optional YouTube cookie export, used only when you enable sign-in (git-ignored) |
 
 ## HTTP API
 
@@ -195,6 +201,7 @@ The UI talks to the server through these endpoints. They are all local-only.
 |---|---|---|
 | `GET` | `/api/status` | Tools, root folder, workers, pause state |
 | `GET` | `/api/events` | SSE stream of job and progress updates |
+| `GET` | `/api/thumb?u=` | Proxy and cache a YouTube thumbnail so the browser never contacts Google directly |
 | `GET` | `/api/jobs` | All jobs plus current status |
 | `POST` | `/api/jobs` | Create jobs from `{ items: [{ url, selected }], root, format, isVideo }` |
 | `POST` | `/api/jobs/:id/retry` | Retry failed tracks in a job |
@@ -217,13 +224,22 @@ The UI talks to the server through these endpoints. They are all local-only.
 ## Troubleshooting
 
 **"YouTube asked for a sign-in check"**
-Sign in to YouTube in Chrome or Edge, then retry the failed tracks. Snagly passes
-your browser cookies to yt-dlp automatically when it finds a browser profile.
-Updating yt-dlp often fixes this too:
+Sign in to YouTube in Chrome, Edge or Firefox, enable **Use YouTube sign-in**
+in the composer, then retry the failed tracks. Snagly passes your browser
+cookies to yt-dlp automatically when it finds a browser profile. If Chrome is
+running and its cookie database is locked, either close Chrome or export a
+`cookies.txt` (see below). Updating yt-dlp often fixes this too:
 
 ```powershell
 winget upgrade --id yt-dlp.yt-dlp -e
 ```
+
+**Chrome's cookie database is locked**
+Chrome keeps its cookies open while it runs. Export a Netscape-format
+`cookies.txt` with a browser extension, save it as `cookies.txt` next to
+`server.js`, and restart Snagly. The file takes priority over browser cookies.
+It contains your YouTube credentials: never commit it, and delete it when you
+no longer need it. It is already listed in `.gitignore`.
 
 **"Tool not found" / downloads do nothing**
 Make sure both winget packages are installed and restart Snagly:

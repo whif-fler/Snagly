@@ -33,7 +33,7 @@
         <li>No account, no cloud, no analytics, no telemetry, no ads.</li>
         <li>Snagly sets no cookies and has no login session.</li>
         <li>Traffic goes only to YouTube/Google, and only for links you paste.</li>
-        <li>Browser sign-in is optional and can be turned off at any time.</li>
+        <li>YouTube sign-in is optional and can be turned off at any time.</li>
       </ul>
     </div>
 
@@ -56,8 +56,8 @@
           </tr>
           <tr>
             <td><code>data/cache/</code></td>
-            <td>Playlist metadata and available format lists</td>
-            <td>Avoids re-querying YouTube while you type</td>
+            <td>Playlist metadata, available format lists, and cached thumbnail images</td>
+            <td>Avoids re-querying YouTube and lets cover art load without the browser contacting Google</td>
           </tr>
           <tr>
             <td>Your save folder</td>
@@ -70,6 +70,11 @@
             <td>Remembers UI preferences</td>
           </tr>
           <tr>
+            <td><code>cookies.txt</code> (optional)</td>
+            <td>A cookie export you place in the Snagly folder yourself</td>
+            <td>Fallback when the browser cookie database is locked</td>
+          </tr>
+          <tr>
             <td><code>%TEMP%</code></td>
             <td>Short-lived files while tags are rewritten</td>
             <td>Deleted right after each write</td>
@@ -79,7 +84,9 @@
     </div>
     <p>
       <code>data/</code> is plain JSON, not encrypted, and is excluded from Git.
-      Anyone with access to your Windows account can read it.
+      On NTFS, Snagly restricts the folder's Windows permissions to your account
+      (plus SYSTEM and Administrators). Anyone who can sign in as your Windows
+      user can still read it.
     </p>
 
     <h2>What leaves this computer</h2>
@@ -95,9 +102,9 @@
             <td>When you preview or download</td>
           </tr>
           <tr>
-            <td><code>i.ytimg.com</code></td>
-            <td>A normal image request from your browser, including your IP address</td>
-            <td>When thumbnails or cover art are shown</td>
+            <td>YouTube image hosts</td>
+            <td>A normal image request from the local Snagly server, including your IP address. Your browser never contacts these hosts directly.</td>
+            <td>When thumbnails or cover art are shown, then from the local cache</td>
           </tr>
           <tr>
             <td>GitHub</td>
@@ -115,7 +122,7 @@
       account, and no server-side session.
     </p>
     <p>
-      The <strong>Use browser sign-in</strong> toggle is different. YouTube often
+      The <strong>Use YouTube sign-in</strong> toggle is different. YouTube often
       asks for a "confirm you're not a bot" check. To get past it, the local
       <code>yt-dlp</code> tool can read the YouTube cookies already saved in your
       Chrome, Edge or Firefox profile. Those cookies:
@@ -131,6 +138,13 @@
       you say yes. You can change it at any time in the composer footer. If the
       browser cookie database is locked, the download continues without cookies
       and Snagly tells you.
+    </p>
+    <p>
+      As an alternative, export a Netscape-format <code>cookies.txt</code> with a
+      browser extension and save it beside <code>server.js</code>. Snagly uses
+      that file instead of the browser database, which avoids the lock. The file
+      contains your YouTube credentials: it is gitignored, never uploaded, and
+      you should delete it when you no longer need it.
     </p>
 
     <h2>No tracking</h2>
@@ -149,9 +163,10 @@
         </thead>
         <tbody>
           <tr><td>History and settings</td><td>Close Snagly and delete the <code>data/</code> folder</td></tr>
-          <tr><td>Cache only</td><td>Use <strong>Clear cache</strong>, or delete <code>data/cache/</code></td></tr>
+          <tr><td>Cache and thumbnails only</td><td>Use <strong>Clear cache</strong>, or delete <code>data/cache/</code></td></tr>
           <tr><td>Downloaded media</td><td>Delete the files in your save folder</td></tr>
-          <tr><td>Browser preferences</td><td>Clear site data for this address in your browser</td></tr>
+          <tr><td>A <code>cookies.txt</code> file</td><td>Delete it beside <code>server.js</code></td></tr>
+          <tr><td>Browser preferences</td><td>Clear site data for Snagly's address (usually <code>localhost:4173</code>)</td></tr>
         </tbody>
       </table>
     </div>
@@ -174,7 +189,10 @@
     <p>
       The server listens only on <code>127.0.0.1</code>, validates <code>Host</code>
       and <code>Origin</code>, accepts only JSON request bodies, restricts links
-      to YouTube, and limits file operations to your library folder.
+      to YouTube, and limits file operations to your library folder. Thumbnails
+      are fetched by the server from a short allow-list of YouTube image hosts
+      with redirects disabled, so the browser only connects to this PC and a
+      crafted thumbnail URL cannot reach your network.
     </p>
 
     <h2>Changes</h2>

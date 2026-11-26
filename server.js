@@ -4,9 +4,11 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { createHash } = require('crypto');
 const engine = require('./engine');
 const {
   parseYouTubeUrl,
+  parseThumbnailUrl,
   isPathInside,
   safeJsonParse
 } = require('./lib/util');
@@ -15,6 +17,8 @@ const PORT = Number(process.env.REEL_PORT) || 4173;
 const HOST = '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_BODY_BYTES = 2_000_000;
+const THUMB_DIR = path.join(engine.dataDir(), 'cache', 'thumbs');
+const MAX_THUMB_BYTES = 5 * 1024 * 1024;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -27,6 +31,7 @@ const MIME = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
+  '.gif': 'image/gif',
   '.woff2': 'font/woff2'
 };
 
@@ -34,7 +39,7 @@ const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' https://i.ytimg.com https://*.ytimg.com data:",
+  "img-src 'self' data:",
   "font-src 'self'",
   "connect-src 'self'",
   "media-src 'self'",
@@ -69,6 +74,79 @@ function sendJson(res, status, data) {
     'Cache-Control': 'no-store'
   });
   res.end(body);
+}
+
+function sendImage(res, file, ext) {
+  fs.readFile(file, (err, data) => {
+    if (err) return sendJson(res, 404, { error: 'Thumbnail unavailable' });
+    securityHeaders(res);
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'image/jpeg',
+      'Content-Length': data.length,
+      'Cache-Control': 'public, max-age=86400'
+    });
+    res.end(data);
+  });
+}
+
+const IMAGE_EXT_BY_TYPE = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif'
+};
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+
+function findCachedThumb(key) {
+  for (const ext of IMAGE_EXTENSIONS) {
+    const file = path.join(THUMB_DIR, `${key}${ext}`);
+    try {
+      if (fs.existsSync(file)) return { file, ext };
+    } catch { /* try the next extension */ }
+  }
+  return null;
+}
+
+async function serveThumb(req, res, raw) {
+  const url = parseThumbnailUrl(raw);
+  if (!url) return sendJson(res, 400, { error: 'Unsupported thumbnail URL' });
+
+  const key = createHash('sha256').update(url.toString()).digest('hex');
+  const cached = findCachedThumb(key);
+  if (cached) return sendImage(res, cached.file, cached.ext);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    // redirect:'error' prevents an allowed host from bouncing the request to
+    // an internal address after the hostname check above.
+    const upstream = await fetch(url, {
+      redirect: 'error',
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Snagly/1.1 (local playlist downloader)' }
+    });
+    if (!upstream.ok) return sendJson(res, 404, { error: 'Thumbnail unavailable' });
+    const type = String(upstream.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
+    const ext = IMAGE_EXT_BY_TYPE[type];
+    if (!ext) return sendJson(res, 404, { error: 'Not an image' });
+    if (Number(upstream.headers.get('content-length') || 0) > MAX_THUMB_BYTES) {
+      return sendJson(res, 404, { error: 'Image too large' });
+    }
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    if (buffer.length > MAX_THUMB_BYTES) {
+      return sendJson(res, 404, { error: 'Image too large' });
+    }
+    fs.mkdirSync(THUMB_DIR, { recursive: true });
+    const file = path.join(THUMB_DIR, `${key}${ext}`);
+    const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+    fs.writeFileSync(tmp, buffer);
+    fs.renameSync(tmp, file);
+    return sendImage(res, file, ext);
+  } catch {
+    return sendJson(res, 404, { error: 'Thumbnail unavailable' });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function readBody(req) {
@@ -293,6 +371,11 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
+
+  if (req.method === 'GET' && pathname === '/api/thumb') {
+    if (!rateLimit(req, res, 'thumb', 600, 60_000)) return;
+    return serveThumb(req, res, url.searchParams.get('u'));
+  }
 
   if (req.method === 'GET' && pathname === '/api/events') {
     securityHeaders(res);

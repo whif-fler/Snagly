@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const {
   parseYouTubeUrl,
+  parseThumbnailUrl,
   isPathInside,
   escapeRegExp,
   safeJsonParse,
@@ -95,4 +96,33 @@ test('isMediaFile only accepts known audio/video extensions', () => {
   assert.equal(isMediaFile('C:\\Music\\video.MP4'), true);
   assert.equal(isMediaFile('C:\\Music\\notes.txt'), false);
   assert.equal(isMediaFile(''), false);
+});
+
+test('parseThumbnailUrl accepts only plain https YouTube image hosts', () => {
+  const good = [
+    'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    'https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
+    'https://yt3.ggpht.com/abc=w1200-h1200'
+  ];
+  for (const url of good) {
+    assert.ok(parseThumbnailUrl(url), `expected ${url} to be accepted`);
+  }
+
+  const bad = [
+    'http://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    'https://i.ytimg.com.evil.com/a.jpg',
+    'https://evil.com/i.ytimg.com/a.jpg',
+    'https://i.ytimg.com:8443/a.jpg',
+    'https://user:pass@i.ytimg.com/a.jpg',
+    'https://localhost/a.jpg',
+    'https://127.0.0.1/a.jpg',
+    'file:///C:/Windows/win.ini',
+    'javascript:alert(1)',
+    'https://i.ytimg.com/' + 'a'.repeat(2100)
+  ];
+  for (const url of bad) {
+    assert.equal(parseThumbnailUrl(url), null, `expected ${url} to be rejected`);
+  }
+  assert.equal(parseThumbnailUrl(''), null);
+  assert.equal(parseThumbnailUrl(null), null);
 });

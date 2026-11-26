@@ -87,8 +87,8 @@ let confirmPreviousOverflow = '';
 
 const WAVE_HEIGHTS = [7, 13, 9, 18, 24, 15, 30, 21, 12, 26, 34, 19, 11, 28, 36, 22, 14, 31, 25, 16, 33, 20, 10, 27, 35, 17, 8, 23, 29, 13, 19, 32, 12, 24, 9, 16];
 
-// Thumbnails come from YouTube. If one fails to load, hide it and reveal the
-// letter placeholder where there is one. No inline handlers, so the CSP can
+// Cover art is fetched by /api/thumb. If one fails to load, hide it and reveal
+// the letter placeholder where there is one. No inline handlers, so the CSP can
 // stay strict.
 document.addEventListener('error', event => {
   const img = event.target;
@@ -159,9 +159,18 @@ function renderSettings() {
     ui.formatSelect._syncMenu?.();
   }
   if (ui.cookieToggle) {
+    const source = status.cookieSource || (status.tools?.browser ? 'browser' : null);
     ui.cookieToggle.checked = status.useCookies !== false;
-    ui.cookieToggle.disabled = !status.tools?.browser;
-    ui.cookieToggle.closest('.cookie-toggle')?.classList.toggle('disabled', !status.tools?.browser);
+    ui.cookieToggle.disabled = !source;
+    const row = ui.cookieToggle.closest('.cookie-toggle');
+    row?.classList.toggle('disabled', !source);
+    if (row) {
+      row.title = source === 'file'
+        ? 'Uses the cookies.txt file in the Snagly folder. Nothing is uploaded.'
+        : source === 'browser'
+          ? 'Uses this browser\'s YouTube cookies locally. Nothing is uploaded.'
+          : 'No YouTube sign-in source was found.';
+    }
   }
   ui.hint.textContent = status.tools?.yt && status.tools?.ffmpeg
     ? 'Runs on this computer — nothing is uploaded. Only download audio you have rights to.'
@@ -242,7 +251,7 @@ function renderLibrary() {
       tile.innerHTML = `
         <button class="tile-open" type="button">
           <span class="tile-art" aria-hidden="true">
-            ${job.thumb ? `<img class="thumb-img" src="${escapeAttr(job.thumb)}" alt="" loading="lazy">` : ''}
+            ${job.thumb ? `<img class="thumb-img" src="${escapeAttr(thumbSrc(job.thumb))}" alt="" loading="lazy">` : ''}
             <span class="placeholder" ${job.thumb ? 'hidden' : ''}>${escapeHtml((job.title || '?').charAt(0))}</span>
             <span class="tile-progress"><span style="width:0%"></span></span>
           </span>
@@ -284,6 +293,14 @@ function escapeHtml(value) {
 }
 const escapeAttr = escapeHtml;
 
+// Thumbnails are proxied through the local server so the browser never makes a
+// request to YouTube. The server caches the image under data/cache/thumbs.
+function thumbSrc(url) {
+  if (!url) return '';
+  const absolute = String(url).startsWith('//') ? `https:${url}` : String(url);
+  return `/api/thumb?u=${encodeURIComponent(absolute)}`;
+}
+
 function filteredJobs() {
   let list = jobs.slice();
   const q = ui.librarySearch.value.trim().toLowerCase();
@@ -306,7 +323,7 @@ function openTrackModal(jobId) {
   if (!job) return;
   openModalJobId = jobId;
   ui.modalTitle.textContent = job.title;
-  const thumb = job.thumb ? `<img class="thumb-img" src="${escapeAttr(job.thumb)}" alt="" loading="lazy">` : `<div class="placeholder" style="width:100%;height:100%;display:grid;place-items:center;font-size:42px;color:var(--faint);font-weight:600">${escapeHtml((job.title||'?').charAt(0))}</div>`;
+  const thumb = job.thumb ? `<img class="thumb-img" src="${escapeAttr(thumbSrc(job.thumb))}" alt="" loading="lazy">` : `<div class="placeholder" style="width:100%;height:100%;display:grid;place-items:center;font-size:42px;color:var(--faint);font-weight:600">${escapeHtml((job.title||'?').charAt(0))}</div>`;
   ui.modalArt.innerHTML = thumb;
   const done = job.tracks.filter(t => t.status === 'done').length;
   const failed = job.tracks.filter(t => t.status === 'failed').length;
@@ -641,7 +658,7 @@ function renderSelection() {
     return `
     <div class="source-group" data-source="${si}">
       <div class="source-head">
-        ${source.thumb ? `<img class="thumb-img" src="${escapeAttr(source.thumb)}" alt="">` : ''}
+        ${source.thumb ? `<img class="thumb-img" src="${escapeAttr(thumbSrc(source.thumb))}" alt="">` : ''}
         <div>
           <strong title="${escapeAttr(source.title)}">${escapeHtml(source.title)}</strong>
           <span class="source-meta" data-count="${source.entries.length}" data-single="${source.single ? '1' : '0'}" data-cached="${source.cached ? '1' : '0'}">${metaLabel}${source.cached ? ' (cached)' : ''}</span>
@@ -962,11 +979,14 @@ async function postSettings(patch) {
 // user's YouTube cookies. The choice is stored locally and can be changed in
 // the composer at any time.
 async function maybeAskCookieChoice() {
-  if (!status?.tools?.browser) return;
+  const source = status?.cookieSource || (status?.tools?.browser ? 'browser' : null);
+  if (!source) return;
   if (localStorage.getItem('snagly-cookie-choice')) return;
   const useCookies = await askConfirm({
-    title: 'Use browser sign-in?',
-    message: 'YouTube sometimes asks for a sign-in check. Snagly can let the local yt-dlp tool read the YouTube cookies already saved in this browser, on this computer. The cookies are used only for YouTube requests — they are never saved in Snagly\'s history and never sent to the developer. You can change this at any time. See Privacy for details.',
+    title: 'Use YouTube sign-in?',
+    message: source === 'file'
+      ? 'YouTube sometimes asks for a sign-in check. Snagly found cookies.txt in its folder and can use it only for YouTube requests. The file stays on this computer and is never uploaded. You can change this at any time. See Privacy for details.'
+      : 'YouTube sometimes asks for a sign-in check. Snagly can let the local yt-dlp tool read the YouTube cookies already saved in this browser, on this computer. The cookies are used only for YouTube requests — they are never saved in Snagly\'s history and never sent to the developer. You can change this at any time. See Privacy for details.',
     confirmLabel: 'Use sign-in',
     cancelLabel: 'No thanks'
   });
@@ -974,8 +994,8 @@ async function maybeAskCookieChoice() {
   await postSettings({ useCookies });
   if (ui.cookieToggle) ui.cookieToggle.checked = useCookies;
   toast(useCookies
-    ? 'Browser sign-in enabled. Change it any time in the composer.'
-    : 'Browser sign-in off. Snagly will download without cookies.');
+    ? 'YouTube sign-in enabled. Change it any time in the composer.'
+    : 'YouTube sign-in off. Snagly will download without cookies.');
 }
 
 ui.download.addEventListener('click', startDownload);

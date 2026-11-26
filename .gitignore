@@ -1,6 +1,9 @@
 # Runtime data: job state, downloaded-track records, playlist cache
 data/
 
+# Exported browser cookies. These are credentials; never commit them.
+cookies.txt
+
 # Node (the app has no dependencies, but be safe)
 node_modules/
 
