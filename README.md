@@ -47,7 +47,7 @@ There is no npm install and no build step.
 - Cover art, title, artist and album embedded into each file
 - Filmstrip library with search, status filter and sorting
 - Open folder, retry failed, remove from library, edit tags
-- Export your download history as JSON
+- Export your download history as CSV (includes full file paths — review before sharing)
 
 **Live progress**
 - Server-sent events stream a live row per active track: phase, percentage,

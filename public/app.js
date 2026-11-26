@@ -479,7 +479,7 @@ function exportHistory() {
   a.download = `snagly-history-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
-  toast(`Exported ${history.length} tracks.`);
+  toast(`Exported ${history.length} tracks. The CSV includes full file paths.`);
 }
 
 function parseRange(text, max) {

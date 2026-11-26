@@ -57,6 +57,11 @@ following requests do leave your computer:
 Snagly sends **nothing** to the developer: no usage data, no crash reports, no
 identifiers, no analytics events.
 
+**Export history** is different: it is a CSV file created only when you click
+the button. It stays on your computer, but it contains the full paths of your
+downloaded files, which can reveal your Windows username and folder layout.
+Review it before sharing it with anyone.
+
 ## Cookies and browser sign-in
 
 **Snagly does not set cookies.** There is no `Set-Cookie` header, no login, and
