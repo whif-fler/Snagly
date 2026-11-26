@@ -91,7 +91,9 @@ sudo mkdir -p /opt/snagly
 sudo chown "$USER":"$USER" /opt/snagly
 git clone https://github.com/whif-fler/Snagly.git /opt/snagly
 cd /opt/snagly
-git checkout v2.0.0   # or the latest release tag
+# Use the verified release tag, branch or commit SHA. No v2.0.0 tag is created
+# until the host deployment checks below have passed.
+git checkout <release-tag-or-commit>
 
 cp .env.example .env
 chmod 600 .env
@@ -251,7 +253,7 @@ Application rollback:
 
 ```bash
 cd /opt/snagly
-git checkout <previous-tag>
+git checkout <previous-tag-or-commit>
 docker compose build
 docker compose up -d
 ```
