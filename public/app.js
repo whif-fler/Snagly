@@ -33,6 +33,7 @@ const ui = {
   theme: $('themeButton'),
   hint: $('composerHint'),
   choose: $('chooseButton'),
+  cookieToggle: $('cookieToggle'),
   selectionPanel: $('selectionPanel'),
   selectionSources: $('selectionSources'),
   selectionSummary: $('selectionSummary'),
@@ -86,6 +87,27 @@ let confirmPreviousOverflow = '';
 
 const WAVE_HEIGHTS = [7, 13, 9, 18, 24, 15, 30, 21, 12, 26, 34, 19, 11, 28, 36, 22, 14, 31, 25, 16, 33, 20, 10, 27, 35, 17, 8, 23, 29, 13, 19, 32, 12, 24, 9, 16];
 
+// Thumbnails come from YouTube. If one fails to load, hide it and reveal the
+// letter placeholder where there is one. No inline handlers, so the CSP can
+// stay strict.
+document.addEventListener('error', event => {
+  const img = event.target;
+  if (!(img instanceof HTMLImageElement) || !img.classList.contains('thumb-img')) return;
+  img.hidden = true;
+  const fallback = img.nextElementSibling;
+  if (fallback && fallback.classList.contains('placeholder')) fallback.hidden = false;
+}, true);
+
+let hadActiveJobs = false;
+function maybeNotifyFinished() {
+  const active = jobs.some(j => j.status === 'running' || j.status === 'queued');
+  if (hadActiveJobs && !active && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    const done = jobs.reduce((n, j) => n + j.done, 0);
+    new Notification('Snagly finished', { body: `${done} track${done === 1 ? '' : 's'} in your library.`, silent: true });
+  }
+  hadActiveJobs = active;
+}
+
 function toast(message, kind = 'info') {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
@@ -135,6 +157,11 @@ function renderSettings() {
   if (status.format && !ui.formatSelect.value) {
     ui.formatSelect.value = status.format;
     ui.formatSelect._syncMenu?.();
+  }
+  if (ui.cookieToggle) {
+    ui.cookieToggle.checked = status.useCookies !== false;
+    ui.cookieToggle.disabled = !status.tools?.browser;
+    ui.cookieToggle.closest('.cookie-toggle')?.classList.toggle('disabled', !status.tools?.browser);
   }
   ui.hint.textContent = status.tools?.yt && status.tools?.ffmpeg
     ? 'Runs on this computer. Only download audio you have rights to.'
@@ -215,7 +242,7 @@ function renderLibrary() {
       tile.innerHTML = `
         <button class="tile-open" type="button">
           <span class="tile-art" aria-hidden="true">
-            ${job.thumb ? `<img src="${escapeAttr(job.thumb)}" alt="" loading="lazy" onerror="this.nextElementSibling.hidden = false; this.remove();">` : ''}
+            ${job.thumb ? `<img class="thumb-img" src="${escapeAttr(job.thumb)}" alt="" loading="lazy">` : ''}
             <span class="placeholder" ${job.thumb ? 'hidden' : ''}>${escapeHtml((job.title || '?').charAt(0))}</span>
             <span class="tile-progress"><span style="width:0%"></span></span>
           </span>
@@ -279,7 +306,7 @@ function openTrackModal(jobId) {
   if (!job) return;
   openModalJobId = jobId;
   ui.modalTitle.textContent = job.title;
-  const thumb = job.thumb ? `<img src="${escapeAttr(job.thumb)}" alt="" loading="lazy" onerror="this.style.display='none'">` : `<div class="placeholder" style="width:100%;height:100%;display:grid;place-items:center;font-size:42px;color:var(--faint);font-weight:600">${escapeHtml((job.title||'?').charAt(0))}</div>`;
+  const thumb = job.thumb ? `<img class="thumb-img" src="${escapeAttr(job.thumb)}" alt="" loading="lazy">` : `<div class="placeholder" style="width:100%;height:100%;display:grid;place-items:center;font-size:42px;color:var(--faint);font-weight:600">${escapeHtml((job.title||'?').charAt(0))}</div>`;
   ui.modalArt.innerHTML = thumb;
   const done = job.tracks.filter(t => t.status === 'done').length;
   const failed = job.tracks.filter(t => t.status === 'failed').length;
@@ -297,14 +324,14 @@ function openTrackModal(jobId) {
     const pct = t.status === 'done' ? 100 : (t.progress || 0);
     const statusLabel = t.status === 'done' ? 'Done' : t.status === 'failed' ? 'Failed' : t.status === 'cancelled' ? 'Cancelled' : t.status === 'missing' ? 'Missing' : t.status === 'running' ? 'Downloading' : 'Queued';
     const baseActions = t.status === 'done'
-      ? `<button class="text-button" data-action="open-file" data-track="${t.id}">Open file</button>`
+      ? `<button class="text-button" data-action="open-file" data-track="${escapeAttr(t.id)}">Open file</button>`
       : t.status === 'failed' || t.status === 'cancelled' || t.status === 'missing'
-        ? `<button class="text-button" data-action="retry-track" data-track="${t.id}">Retry</button>`
+        ? `<button class="text-button" data-action="retry-track" data-track="${escapeAttr(t.id)}">Retry</button>`
         : '';
     const editBtn = t.status === 'done'
-      ? `<button class="text-button" data-action="edit-tags" data-track="${t.id}">Edit tags</button>`
+      ? `<button class="text-button" data-action="edit-tags" data-track="${escapeAttr(t.id)}">Edit tags</button>`
       : '';
-    return `<div class="track-detail" data-track="${t.id}">
+    return `<div class="track-detail" data-track="${escapeAttr(t.id)}">
       <div class="track-name" style="flex:1; min-width:0; position:relative;">
         <div style="font-weight:600" data-field="title">${escapeHtml(t.title)}</div>
         <div style="font-size:11px;color:var(--faint)" data-field="artist">${escapeHtml(t.artist)}, #${String(t.index).padStart(2,'0')}</div>
@@ -314,9 +341,10 @@ function openTrackModal(jobId) {
       <div class="track-status">${statusLabel}</div>
       <div class="track-bar"><span style="width:${pct}%"></span></div>
       ${t.error ? `<div class="track-error">${escapeHtml(t.error)}</div>` : ''}
+      ${t.warning ? `<div class="track-warning">${escapeHtml(t.warning)}</div>` : ''}
       <div class="track-actions">${baseActions}${editBtn}
-        <button class="text-button" data-action="save-tags" data-track="${t.id}" hidden>Save</button>
-        <button class="text-button" data-action="cancel-edit" data-track="${t.id}" hidden>Cancel</button>
+        <button class="text-button" data-action="save-tags" data-track="${escapeAttr(t.id)}" hidden>Save</button>
+        <button class="text-button" data-action="cancel-edit" data-track="${escapeAttr(t.id)}" hidden>Cancel</button>
       </div>
     </div>`;
   }).join('');
@@ -407,6 +435,13 @@ document.addEventListener('keydown', event => {
   }
 });
 
+function csvCell(value) {
+  let text = String(value ?? '');
+  // Stop spreadsheet formula injection in exported titles and paths.
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
 function exportHistory() {
   const history = [];
   for (const job of jobs) {
@@ -418,7 +453,7 @@ function exportHistory() {
   }
   history.sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0));
   const csv = ['title,artist,album,file,completedAt\n']
-    .concat(history.map(h => [h.title, h.artist, h.album, h.file, h.completedAt].map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(',')))
+    .concat(history.map(h => [h.title, h.artist, h.album, h.file, h.completedAt].map(csvCell).join(',')))
     .join('');
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
@@ -606,7 +641,7 @@ function renderSelection() {
     return `
     <div class="source-group" data-source="${si}">
       <div class="source-head">
-        ${source.thumb ? `<img src="${escapeAttr(source.thumb)}" alt="" onerror="this.remove()">` : ''}
+        ${source.thumb ? `<img class="thumb-img" src="${escapeAttr(source.thumb)}" alt="">` : ''}
         <div>
           <strong title="${escapeAttr(source.title)}">${escapeHtml(source.title)}</strong>
           <span class="source-meta" data-count="${source.entries.length}" data-single="${source.single ? '1' : '0'}" data-cached="${source.cached ? '1' : '0'}">${metaLabel}${source.cached ? ' (cached)' : ''}</span>
@@ -763,6 +798,7 @@ function scheduleRender() {
     renderSettings();
     renderActivity();
     renderLibrary();
+    maybeNotifyFinished();
   });
 }
 
@@ -801,7 +837,27 @@ function connectEvents() {
   };
 }
 
+async function submitJobs(payload) {
+  let result = await api('/api/jobs', { method: 'POST', body: JSON.stringify(payload) });
+  const duplicates = (result.errors || []).filter(error => error.duplicate);
+  if (duplicates.length && !payload.allowDuplicate) {
+    const confirmed = await askConfirm({
+      title: 'Already in library',
+      message: `${duplicates.length} link${duplicates.length === 1 ? ' is' : 's are'} already in your library. Add ${duplicates.length === 1 ? 'it' : 'them'} again?`,
+      confirmLabel: 'Add anyway',
+      cancelLabel: 'Skip'
+    });
+    if (confirmed) {
+      result = await api('/api/jobs', { method: 'POST', body: JSON.stringify({ ...payload, allowDuplicate: true }) });
+    }
+  }
+  return result;
+}
+
 async function startDownload() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
   const urls = ui.urls.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
   if (!urls.length) {
     toast('Paste at least one playlist link first.', 'error');
@@ -837,14 +893,11 @@ async function startDownload() {
     setDownloadLabel('Preparing…');
     try {
       const fmt = isVideo ? ui.videoFormatSelect.value : ui.formatSelect.value;
-      const result = await api('/api/jobs', {
-        method: 'POST',
-        body: JSON.stringify({
-          items,
-          root: ui.savePath.value.trim(),
-          format: fmt,
-          isVideo
-        })
+      const result = await submitJobs({
+        items,
+        root: ui.savePath.value.trim(),
+        format: fmt,
+        isVideo
       });
       if (result.created?.length) {
         ui.urls.value = '';
@@ -876,14 +929,11 @@ async function startDownload() {
   try {
     const isVideo = ui.modeVideo.classList.contains('active');
     const fmt = isVideo ? ui.videoFormatSelect.value : ui.formatSelect.value;
-    const result = await api('/api/jobs', {
-      method: 'POST',
-      body: JSON.stringify({
-        urls,
-        root: ui.savePath.value.trim(),
-        format: fmt,
-        isVideo
-      })
+    const result = await submitJobs({
+      urls,
+      root: ui.savePath.value.trim(),
+      format: fmt,
+      isVideo
     });
     if (result.created?.length) {
       ui.urls.value = '';
@@ -943,32 +993,41 @@ ui.urls.addEventListener('input', () => {
   }, 300);
 });
 
+// Drop a link (or selected text) anywhere on the composer to add it.
+function addDroppedLinks(event) {
+  event.preventDefault();
+  ui.urls.classList.remove('drag');
+  const data = event.dataTransfer;
+  if (!data) return;
+  const text = (data.getData('text/uri-list') || data.getData('text/plain') || '').trim();
+  if (!text) return;
+  const existing = ui.urls.value.trim();
+  ui.urls.value = existing ? `${existing}\n${text}` : text;
+  ui.urls.dispatchEvent(new Event('input'));
+  ui.urls.focus();
+}
+ui.urls.addEventListener('dragover', event => {
+  event.preventDefault();
+  ui.urls.classList.add('drag');
+});
+ui.urls.addEventListener('dragleave', () => ui.urls.classList.remove('drag'));
+ui.urls.addEventListener('drop', addDroppedLinks);
+
 ui.browse.addEventListener('click', async () => {
   ui.browse.disabled = true;
   try {
-    // Modern folder picker. Works on Chrome/Edge (localhost or HTTPS).
-    if ('showDirectoryPicker' in window) {
-      try {
-        const handle = await window.showDirectoryPicker();
-        window.snaglyDirHandle = handle; // Store for saving
-        ui.savePath.value = handle.name;
-        toast(`Saving to ${handle.name}`);
-      } catch (err) {
-        if (err.name !== 'AbortError') throw err;
-        // User cancelled
-      }
-    } else {
-      // Firefox/Safari fallback: server-side picker
-      const result = await api('/api/browse', {
-        method: 'POST',
-        body: JSON.stringify({ path: ui.savePath.value.trim() })
-      });
-      if (result.path) {
-        ui.savePath.value = result.path;
-        toast(`Saving to ${result.path}`);
-      } else if (result.error) {
-        toast(result.error, 'error');
-      }
+    // The browser's showDirectoryPicker() only exposes a folder *name*, not an
+    // absolute path, and the server is what writes the files. Use the native
+    // Windows picker on the server instead.
+    const result = await api('/api/browse', {
+      method: 'POST',
+      body: JSON.stringify({ path: ui.savePath.value.trim() })
+    });
+    if (result.path) {
+      ui.savePath.value = result.path;
+      toast(`Saving to ${result.path}`);
+    } else if (result.error) {
+      toast(result.error, 'error');
     }
   } catch (err) { toast(err.message, 'error'); }
   finally { ui.browse.disabled = false; }
@@ -1085,6 +1144,10 @@ ui.theme.addEventListener('click', () => {
   applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
 });
 
+ui.cookieToggle?.addEventListener('change', () => {
+  postSettings({ useCookies: ui.cookieToggle.checked });
+});
+
 ui.pause.addEventListener('click', async () => {
   try {
     await api('/api/pause', { method: 'POST', body: JSON.stringify({ paused: !status.paused }) });
@@ -1134,7 +1197,8 @@ ui.modalOpenFolder.addEventListener('click', async () => {
 ui.modalYouTube.addEventListener('click', () => {
   const job = jobs.find(j => j.id === openModalJobId);
   if (!job) return;
-  window.open(`https://www.youtube.com/playlist?list=${job.playlistId}`, '_blank');
+  const url = job.single ? job.url : `https://www.youtube.com/playlist?list=${encodeURIComponent(job.playlistId || '')}`;
+  window.open(url, '_blank', 'noopener');
 });
 
 ui.modalRetryAll.addEventListener('click', async () => {
@@ -1211,12 +1275,12 @@ ui.modalBody.addEventListener('click', async event => {
   const track = job && job.tracks.find(t => t.id === trackId);
   if (!track) return;
   if (btn.dataset.action === 'open-file') {
-    try { await api('/api/open', { method: 'POST', body: JSON.stringify({ path: track.file }) }); }
+    try { await api('/api/open', { method: 'POST', body: JSON.stringify({ path: track.file, reveal: true }) }); }
     catch (err) { toast(err.message, 'error'); }
   }
   if (btn.dataset.action === 'retry-track') {
     try {
-      const result = await api(`/api/jobs/${job.id}/retry`, { method: 'POST', body: '{}' });
+      const result = await api(`/api/jobs/${job.id}/retry`, { method: 'POST', body: JSON.stringify({ trackId: track.id }) });
       toast(`Retrying ${result.retried} track${result.retried === 1 ? '' : 's'}.`);
       await refresh();
     } catch (err) { toast(err.message, 'error'); }
@@ -1275,13 +1339,6 @@ ui.clearCacheButton.addEventListener('click', async () => {
 });
 
 // Cancel a job from the activity panel
-ui.pause.addEventListener('click', async () => {
-  try {
-    await api('/api/pause', { method: 'POST', body: JSON.stringify({ paused: !status.paused }) });
-    await refresh();
-  } catch (err) { toast(err.message, 'error'); }
-});
-
 function renderAudioFormatList(list) {
   ui.formatSelect.innerHTML = list
     .map(f => `<option value="${escapeAttr(f.key)}">${escapeHtml(f.label)}</option>`)

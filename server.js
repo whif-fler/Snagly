@@ -3,12 +3,18 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const { execFile, spawn } = require('child_process');
+const { spawn } = require('child_process');
 const engine = require('./engine');
+const {
+  parseYouTubeUrl,
+  isPathInside,
+  safeJsonParse
+} = require('./lib/util');
 
 const PORT = Number(process.env.REEL_PORT) || 4173;
+const HOST = '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const MAX_BODY_BYTES = 2_000_000;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -16,11 +22,47 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.json': 'application/json; charset=utf-8',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.woff2': 'font/woff2'
 };
+
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' https://i.ytimg.com https://*.ytimg.com data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "media-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'"
+].join('; ');
+
+const ALLOWED_HOSTS = new Set([
+  `127.0.0.1:${PORT}`,
+  `localhost:${PORT}`,
+  `[::1]:${PORT}`
+]);
+
+function securityHeaders(res) {
+  res.setHeader('Content-Security-Policy', CSP);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+}
 
 function sendJson(res, status, data) {
   const body = JSON.stringify(data);
+  securityHeaders(res);
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
@@ -32,102 +74,227 @@ function sendJson(res, status, data) {
 function readBody(req) {
   return new Promise(resolve => {
     let body = '';
+    let done = false;
+    const finish = value => {
+      if (done) return;
+      done = true;
+      resolve(value);
+    };
     req.on('data', chunk => {
       body += chunk;
-      if (body.length > 2_000_000) req.destroy();
+      if (body.length > MAX_BODY_BYTES) {
+        req.destroy();
+        finish({});
+      }
     });
-    req.on('end', () => {
-      try { resolve(body ? JSON.parse(body) : {}); }
-      catch { resolve({}); }
-    });
+    req.on('end', () => finish(safeJsonParse(body, {})));
+    req.on('error', () => finish({}));
   });
 }
 
+function originAllowed(origin) {
+  if (!origin) return true;
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'http:' && ALLOWED_HOSTS.has(url.host.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+// Blocks DNS-rebinding (Host header), cross-site form/fetch requests (Origin),
+// and non-JSON bodies that a plain HTML form could send.
+function guard(req, res) {
+  const host = String(req.headers.host || '').toLowerCase();
+  if (!ALLOWED_HOSTS.has(host)) {
+    sendJson(res, 403, { error: 'Forbidden host' });
+    return false;
+  }
+  if (!originAllowed(req.headers.origin)) {
+    sendJson(res, 403, { error: 'Forbidden origin' });
+    return false;
+  }
+  const site = req.headers['sec-fetch-site'];
+  if (site && site !== 'same-origin' && site !== 'none') {
+    sendJson(res, 403, { error: 'Forbidden site' });
+    return false;
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    const length = Number(req.headers['content-length'] || 0);
+    const type = String(req.headers['content-type'] || '').toLowerCase();
+    // Empty bodies are fine (DELETE, cache clear). Anything with content must be
+    // JSON so a plain HTML form cannot forge a state-changing request.
+    if (length > 0 && !type.startsWith('application/json')) {
+      sendJson(res, 415, { error: 'Expected application/json' });
+      return false;
+    }
+    if (length > MAX_BODY_BYTES) {
+      sendJson(res, 413, { error: 'Request body is too large' });
+      return false;
+    }
+  }
+  return true;
+}
+
+const buckets = new Map();
+function rateLimit(req, res, name, limit, windowMs) {
+  const ip = req.socket.remoteAddress || 'local';
+  const key = `${name}:${ip}`;
+  const now = Date.now();
+  let bucket = buckets.get(key);
+  if (!bucket || now - bucket.start >= windowMs) {
+    bucket = { start: now, count: 0 };
+    buckets.set(key, bucket);
+  }
+  bucket.count++;
+  if (bucket.count > limit) {
+    sendJson(res, 429, { error: 'Too many requests. Wait a moment and try again.' });
+    return false;
+  }
+  return true;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of buckets) {
+    if (now - bucket.start > 60 * 60 * 1000) buckets.delete(key);
+  }
+}, 60 * 60 * 1000).unref();
+
+function youtubeLinks(values) {
+  const urls = [];
+  const invalid = [];
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (!text) continue;
+    const url = parseYouTubeUrl(text);
+    if (url) urls.push(url.toString());
+    else invalid.push(text.slice(0, 120));
+  }
+  return { urls, invalid };
+}
+
 function serveStatic(req, res, pathname) {
-  const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return sendJson(res, 405, { error: 'Method not allowed' });
+  }
+
+  let relative;
+  try {
+    relative = decodeURIComponent(pathname);
+  } catch {
+    return sendJson(res, 400, { error: 'Bad path' });
+  }
+  if (relative === '/') relative = 'index.html';
+  else relative = relative.replace(/^\/+/, '');
+  if (relative.includes('\0')) return sendJson(res, 400, { error: 'Bad path' });
+
   const filePath = path.resolve(PUBLIC_DIR, relative);
-  if (!filePath.startsWith(PUBLIC_DIR + path.sep) && filePath !== path.join(PUBLIC_DIR, 'index.html')) {
+  if (!isPathInside(PUBLIC_DIR, filePath)) {
     return sendJson(res, 403, { error: 'Forbidden' });
   }
+
   fs.readFile(filePath, (err, data) => {
     if (err) return sendJson(res, 404, { error: 'Not found' });
+    securityHeaders(res);
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
-      'Cache-Control': 'no-cache'
+      'Content-Length': data.length,
+      'Cache-Control': relative.startsWith('assets/') ? 'public, max-age=3600' : 'no-cache'
     });
+    if (req.method === 'HEAD') return res.end();
     res.end(data);
   });
 }
 
-function openFolder(target, res) {
-  if (!target || typeof target !== 'string') return sendJson(res, 400, { error: 'No folder given' });
+function openPath(target, reveal, res) {
+  if (!target || typeof target !== 'string' || target.length > 4096) {
+    return sendJson(res, 400, { error: 'No path given' });
+  }
   const resolved = path.resolve(target);
-  const root = path.resolve(engine.getStatus().root);
-  const isUnderRoot = resolved === root || resolved.startsWith(root + path.sep);
-  if (!isUnderRoot) return sendJson(res, 403, { error: 'Folder is outside the library root' });
-  if (!fs.existsSync(resolved)) return sendJson(res, 404, { error: 'Folder does not exist' });
-  const child = spawn('explorer.exe', [resolved], { detached: true, stdio: 'ignore', windowsHide: false });
-  child.on('error', err => sendJson(res, 500, { error: err.message }));
+  if (!engine.isLibraryPath(resolved)) {
+    return sendJson(res, 403, { error: 'Path is outside the library' });
+  }
+  let stat;
+  try { stat = fs.statSync(resolved); } catch {
+    return sendJson(res, 404, { error: 'Path does not exist' });
+  }
+
+  const args = reveal && stat.isFile() ? ['/select,', resolved] : [resolved];
+  const child = spawn('explorer.exe', args, { detached: true, stdio: 'ignore' });
+  child.on('error', err => console.error('Could not open Explorer:', err.message));
   child.unref();
-  sendJson(res, 200, { ok: true });
+  return sendJson(res, 200, { ok: true });
 }
 
-// Windows Vista+ folder picker (IFileOpenDialog with FOS_PICKFOLDERS)
-// the same "Choose a folder" sheet Explorer uses.
-// Pure PowerShell COM interop via a temp .ps1 file (no C# compilation).
-const FOLDER_PICKER_PS1 = `
+const FOLDER_PICKER_SCRIPT = `
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Runtime.InteropServices
-
-$clsid = [Guid]'DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7'
-$iidFileDialog = [Guid]'42f85136-db7e-439c-85f1-e4075d135fc8'
-$iidShellItem = [Guid]'43826d1e-e718-42ee-bc55-a1e261c37bfe'
-$SIGDN_FILESYSPATH = 0x80058000
-$FOS_PICKFOLDERS = 0x00000020
-$FOS_FORCEFILESYSTEM = 0x00000040
-$FOS_PATHMUSTEXIST = 0x00000800
-
-$dlg = [Activator]::CreateInstance([Type]::GetTypeFromCLSID($clsid))
-$pdf = $dlg
-
-$pdf.GetOptions([ref]$opts)
-$pdf.SetOptions($opts -bor $FOS_PICKFOLDERS -bor $FOS_FORCEFILESYSTEM -bor $FOS_PATHMUSTEXIST)
-$pdf.SetTitle('Choose where Snagly saves music')
-$pdf.SetOkButtonLabel('Choose Folder')
-
-if ('$initial' -and [IO.Directory]::Exists('$initial')) {
-    $psi = $null
-    $hr = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer(
-        (Add-Type -MemberDefinition '
-            [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
-            public static extern void SHCreateItemFromParsingName(
-                string pszPath, IntPtr pbc, ref Guid riid, out object ppv);
-        ' -Name 'SH' -PassThru).GetMethod('SHCreateItemFromParsingName').MethodHandle.GetFunctionPointer(),
-        [Func[string, IntPtr, [Guid].MakeByRefType(), [Object].MakeByRefType()]]
-    ).Invoke('$initial', [IntPtr]::Zero, [ref]$iidShellItem, [ref]$psi)
-    if ($hr -eq 0 -and $psi) { $pdf.SetFolder($psi) }
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = 'Choose where Snagly saves music'
+$dialog.ShowNewFolderButton = $true
+if ($env:SNAGLY_INITIAL -and (Test-Path -LiteralPath $env:SNAGLY_INITIAL)) {
+  $dialog.SelectedPath = $env:SNAGLY_INITIAL
 }
-
-$hr = $pdf.Show([IntPtr]::Zero)
-if ($hr -eq 0) {
-    $result = $null
-    $pdf.GetResult([ref]$result)
-    $path = ''
-    $result.GetDisplayName($SIGDN_FILESYSPATH, [ref]$path)
-    $path
+$result = $dialog.ShowDialog()
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+  [Console]::Out.Write($dialog.SelectedPath)
 }
 `;
 
 function pickFolder(current, res) {
-  // Simple fallback for non-Chromium: return null so UI shows "type a path"
-  sendJson(res, 200, { path: null, error: 'Use a Chromium browser for the folder picker, or type a path manually' });
+  const initial = typeof current === 'string' ? current.trim() : '';
+  const child = spawn(
+    'powershell.exe',
+    ['-NoProfile', '-STA', '-NonInteractive', '-Command', FOLDER_PICKER_SCRIPT],
+    {
+      windowsHide: true,
+      env: { ...process.env, SNAGLY_INITIAL: initial },
+      stdio: ['ignore', 'pipe', 'pipe']
+    }
+  );
+
+  let stdout = '';
+  let stderr = '';
+  let responded = false;
+  const reply = payload => {
+    if (responded) return;
+    responded = true;
+    sendJson(res, 200, payload);
+  };
+  const fail = message => {
+    if (responded) return;
+    responded = true;
+    sendJson(res, 500, { error: message });
+  };
+
+  const timer = setTimeout(() => {
+    try { child.kill(); } catch {}
+    reply({ path: null, error: 'The folder picker timed out' });
+  }, 5 * 60 * 1000);
+
+  child.stdout.on('data', chunk => { if (stdout.length < 4096) stdout += chunk.toString(); });
+  child.stderr.on('data', chunk => { if (stderr.length < 4096) stderr += chunk.toString(); });
+  child.on('error', err => {
+    clearTimeout(timer);
+    fail(err.message);
+  });
+  child.on('close', code => {
+    clearTimeout(timer);
+    const chosen = stdout.trim();
+    if (code === 0 && chosen) return reply({ path: chosen });
+    if (code !== 0 && stderr.trim()) return fail(stderr.trim().slice(-400));
+    return reply({ path: null });
+  });
 }
 
 const server = http.createServer(async (req, res) => {
+  if (!guard(req, res)) return;
+
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
   if (req.method === 'GET' && pathname === '/api/events') {
+    securityHeaders(res);
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache',
@@ -155,10 +322,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && pathname === '/api/preview') {
+    if (!rateLimit(req, res, 'preview', 20, 60_000)) return;
     const body = await readBody(req);
-    const urls = (Array.isArray(body.urls) ? body.urls : [body.url])
-      .map(u => String(u || '').trim())
-      .filter(u => /youtube\.com|youtu\.be/i.test(u));
+    const raw = Array.isArray(body.urls) ? body.urls : [body.url];
+    if (raw.length > 50) return sendJson(res, 400, { error: 'Too many links at once' });
+    const { urls, invalid } = youtubeLinks(raw);
+    if (invalid.length) return sendJson(res, 400, { error: 'Only YouTube links are supported' });
     if (!urls.length) return sendJson(res, 400, { error: 'Paste at least one YouTube link' });
     try {
       return sendJson(res, 200, await engine.previewSources(urls));
@@ -168,43 +337,71 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && pathname === '/api/probe') {
+    if (!rateLimit(req, res, 'probe', 60, 60_000)) return;
     const body = await readBody(req);
-    const url = String(body.url || '').trim();
-    if (!/youtube\.com|youtu\.be/i.test(url)) return sendJson(res, 400, { error: 'A YouTube link is required' });
+    const parsed = parseYouTubeUrl(String(body.url || '').trim());
+    if (!parsed) return sendJson(res, 400, { error: 'A YouTube link is required' });
     try {
-      return sendJson(res, 200, { formats: await engine.probeFormats(url) });
+      return sendJson(res, 200, { formats: await engine.probeFormats(parsed.toString()) });
     } catch (err) {
       return sendJson(res, 500, { error: err.message });
     }
   }
 
   if (req.method === 'POST' && pathname === '/api/jobs') {
+    if (!rateLimit(req, res, 'jobs', 20, 60_000)) return;
     const body = await readBody(req);
     const rawItems = Array.isArray(body.items) ? body.items : (Array.isArray(body.urls) ? body.urls : [body.url]);
-    const items = rawItems
-      .map(item => {
-        const obj = typeof item === 'string' ? { url: item } : item;
-        return { url: String(obj?.url || '').trim(), selected: Array.isArray(obj?.selected) ? obj.selected : null };
-      })
-      .filter(item => /youtube\.com|youtu\.be/i.test(item.url));
+    if (rawItems.length > 50) return sendJson(res, 400, { error: 'Too many links at once' });
+
+    const items = [];
+    let invalid = false;
+    for (const item of rawItems) {
+      const object = typeof item === 'string' ? { url: item } : item;
+      const parsed = parseYouTubeUrl(String(object?.url || '').trim());
+      if (!parsed) { invalid = true; continue; }
+      const selected = Array.isArray(object?.selected)
+        ? object.selected.slice(0, 5000).map(Number).filter(n => Number.isInteger(n) && n >= 1 && n <= 100000)
+        : null;
+      items.push({ url: parsed.toString(), selected });
+    }
+    if (invalid) return sendJson(res, 400, { error: 'Only YouTube links are supported' });
     if (!items.length) return sendJson(res, 400, { error: 'Paste at least one YouTube link' });
+
+    const isVideo = Boolean(body.isVideo);
+    const format = String(body.format || (isVideo ? '1080p' : 'mp3'));
+    const validFormats = new Set((isVideo ? engine.videoFormats() : engine.formats()).map(f => f.key));
+    if (!validFormats.has(format)) return sendJson(res, 400, { error: 'Unknown quality option' });
+
+    if (body.root !== undefined) {
+      try { engine.prepareRoot(body.root); }
+      catch (err) { return sendJson(res, 400, { error: err.message }); }
+    }
+
     try {
       const result = await engine.createJobs(items, {
         root: body.root,
         collection: body.collection,
-        format: body.format,
-        isVideo: body.isVideo
+        format,
+        isVideo,
+        allowDuplicate: Boolean(body.allowDuplicate)
       });
       return sendJson(res, 201, result);
     } catch (err) {
-      return sendJson(res, 500, { error: err.message });
+      return sendJson(res, 400, { error: err.message });
     }
   }
 
   if (req.method === 'POST' && pathname.startsWith('/api/jobs/') && pathname.endsWith('/retry')) {
+    if (!rateLimit(req, res, 'retry', 30, 60_000)) return;
     const id = pathname.split('/')[3];
+    const body = await readBody(req);
+    const trackId = body.trackId ? String(body.trackId) : null;
+    if (trackId && !/^[A-Za-z0-9_-]{11}$/.test(trackId)) {
+      return sendJson(res, 400, { error: 'Invalid track id' });
+    }
     try {
-      const count = engine.retryJob(id);
+      const count = engine.retryJob(id, trackId);
       if (count === false) return sendJson(res, 404, { error: 'Job not found' });
       return sendJson(res, 200, { retried: count });
     } catch (err) {
@@ -215,8 +412,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'DELETE' && pathname.startsWith('/api/jobs/')) {
     const id = pathname.split('/')[3];
     try {
-      const ok = engine.removeJob(id);
-      if (!ok) return sendJson(res, 409, { error: 'Job is still downloading. Cancel it first' });
+      const result = engine.removeJob(id);
+      if (result === 'missing') return sendJson(res, 404, { error: 'Job not found' });
+      if (result === 'running') return sendJson(res, 409, { error: 'Job is still downloading. Cancel it first' });
       return sendJson(res, 200, { ok: true });
     } catch (err) {
       return sendJson(res, 500, { error: err.message });
@@ -253,24 +451,26 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && pathname === '/api/pause') {
     const body = await readBody(req);
-    engine.setPaused(body.paused);
+    engine.setPaused(Boolean(body.paused));
     return sendJson(res, 200, { ok: true });
   }
 
   if (req.method === 'POST' && pathname === '/api/settings') {
     const body = await readBody(req);
     if (body.workers !== undefined) engine.setWorkers(body.workers);
-    if (body.useCookies !== undefined) engine.setUseCookies(body.useCookies);
-    if (body.isVideo !== undefined) engine.setIsVideo(body.isVideo);
+    if (body.useCookies !== undefined) engine.setUseCookies(Boolean(body.useCookies));
+    if (body.isVideo !== undefined) engine.setIsVideo(Boolean(body.isVideo));
     return sendJson(res, 200, engine.getStatus());
   }
 
   if (req.method === 'POST' && pathname === '/api/open') {
+    if (!rateLimit(req, res, 'open', 60, 60_000)) return;
     const body = await readBody(req);
-    return openFolder(body.path, res);
+    return openPath(body.path, Boolean(body.reveal), res);
   }
 
   if (req.method === 'POST' && pathname === '/api/browse') {
+    if (!rateLimit(req, res, 'browse', 10, 60_000)) return;
     const body = await readBody(req);
     return pickFolder(body.path, res);
   }
@@ -284,29 +484,59 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && pathname === '/api/tags/edit') {
+    if (!rateLimit(req, res, 'tags', 30, 60_000)) return;
     const body = await readBody(req);
-    const { file, tags } = body;
-    if (!file || typeof tags !== 'object') {
+    const file = body.file;
+    const tags = body.tags;
+    if (typeof file !== 'string' || !file || !tags || typeof tags !== 'object' || Array.isArray(tags)) {
       return sendJson(res, 400, { error: 'File and tags required' });
     }
     try {
-      engine.editTags(file, tags);
+      await engine.editTags(file, tags);
       return sendJson(res, 200, { ok: true });
     } catch (err) {
-      return sendJson(res, 500, { error: err.message });
+      const status = /outside the library|Only media|not found/i.test(err.message) ? 400 : 500;
+      return sendJson(res, status, { error: err.message });
     }
   }
 
-  if (req.method === 'GET') return serveStatic(req, res, pathname);
+  if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res, pathname);
   return sendJson(res, 405, { error: 'Method not allowed' });
 });
 
+server.headersTimeout = 20_000;
+server.requestTimeout = 30_000;
+server.keepAliveTimeout = 5_000;
+server.maxHeadersCount = 100;
+
+server.on('clientError', (err, socket) => {
+  if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+});
+
+server.on('error', err => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n  Port ${PORT} is already in use.`);
+    console.error(`  Close the other Snagly window, or start with: $env:REEL_PORT = 5000; node server.js\n`);
+    process.exit(1);
+  }
+  throw err;
+});
+
 engine.init();
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, HOST, () => {
   console.log(`\n  Snagly is running at http://localhost:${PORT}`);
   console.log(`  Library root: ${engine.getStatus().root}`);
   console.log('  Press Ctrl+C to stop.\n');
 });
 
-process.on('SIGINT', () => { engine.saveStateNow(); process.exit(0); });
-process.on('SIGTERM', () => { engine.saveStateNow(); process.exit(0); });
+let shuttingDown = false;
+function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try { engine.shutdown(); } catch (err) { console.error('Shutdown error:', err.message); }
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 3000).unref();
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

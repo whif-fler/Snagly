@@ -1,0 +1,22 @@
+{
+  "name": "snagly",
+  "version": "1.1.0",
+  "private": true,
+  "description": "A local web app that turns YouTube playlists into a tagged music library or MP4 video up to 4K.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "check": "node --check server.js && node --check engine.js && node --check lib/util.js && node --check public/app.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "youtube",
+    "playlist",
+    "mp3",
+    "yt-dlp",
+    "ffmpeg"
+  ]
+}

@@ -56,7 +56,10 @@ There is no npm install and no build step.
 
 **Small things**
 - Light and dark themes
-- Browser sign-in cookies are reused automatically (Chrome, Edge or Firefox)
+- Browser sign-in cookies are reused automatically (Chrome, Edge or Firefox),
+  with a toggle in the composer to turn them off
+- Drag a link or drop selected text onto the link box
+- Desktop notification when a batch finishes while the tab is in the background
 - Friendly error messages for the usual YouTube sign-in checks
 
 ## Requirements
@@ -111,6 +114,19 @@ or edit their tags.
 
 Downloaded tracks are recorded in `data/state.json`, so adding the same playlist
 again skips anything that already exists.
+
+## Tests
+
+The project has no runtime dependencies, and the test suite uses only Node's
+built-in runner:
+
+```powershell
+npm test
+```
+
+This covers URL validation, path containment, prototype-pollution-safe JSON
+parsing, tag sanitising, folder-name sanitising, format presets and the
+download-file lookup that detects existing tracks.
 
 ## How it works
 
@@ -172,8 +188,8 @@ The UI talks to the server through these endpoints. They are all local-only.
 | `POST` | `/api/tags/edit` | `{ file, tags }` to rewrite a file's metadata |
 | `GET` | `/api/history` | Exportable download history |
 | `POST` | `/api/cache/clear` | Delete cached playlist metadata |
-| `POST` | `/api/open` | `{ path }` — open a library folder in Explorer |
-| `POST` | `/api/browse` | Folder picker placeholder for non-Chromium browsers |
+| `POST` | `/api/open` | `{ path, reveal? }` — open a library file or folder in Explorer |
+| `POST` | `/api/browse` | Open the native Windows folder picker and return the chosen path |
 
 </details>
 
