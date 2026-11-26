@@ -51,6 +51,10 @@ All notable changes to Snagly are documented here. The format follows
 - Thumbnail proxy restricted to YouTube image hosts without redirects.
 - Filename/path sanitisation and containment checks.
 - No server paths or cross-user data in API responses, SSE or delivery.
+- Origin checks compare the full authority, including port, and unsafe requests
+  require a JSON content type.
+- In-memory preview and on-disk thumbnail caches are bounded, with oldest-first
+  eviction, so repeated requests cannot exhaust memory or disk.
 - Browser cookie extraction and arbitrary filesystem actions disabled in cloud
   mode.
 
