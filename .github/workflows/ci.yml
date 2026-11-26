@@ -2,30 +2,55 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/**']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    runs-on: windows-latest
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22]
-
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['22', '24']
     steps:
       - uses: actions/checkout@v4
-
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm test
 
-      - name: Syntax check
-        run: npm run check
-
-      - name: Unit tests
-        run: npm test
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: snagly:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Verify non-root user and tools
+        run: |
+          docker run --rm --entrypoint sh snagly:ci -c 'test "$(id -u)" != "0" && /usr/local/bin/yt-dlp --version && ffmpeg -version | head -n 1'

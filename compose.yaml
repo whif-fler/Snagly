@@ -1,0 +1,85 @@
+name: snagly
+
+services:
+  snagly:
+    build:
+      context: .
+      args:
+        YTDLP_VERSION: ${YTDLP_VERSION:-2026.11.23}
+    image: snagly:${SNAGLY_VERSION:-2.0.0}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SNAGLY_MODE: cloud
+      SNAGLY_DATA_DIR: /data
+      SNAGLY_HOST: 0.0.0.0
+      SNAGLY_PORT: 4174
+      SNAGLY_WEB_DIR: /app/apps/web/public
+      SNAGLY_YTDLP_PATH: /usr/local/bin/yt-dlp
+      SNAGLY_FFMPEG_PATH: /usr/bin/ffmpeg
+      SNAGLY_MEDIA_ENGINE: real
+      HOME: /tmp
+    ports:
+      # Bind to loopback only. Cloudflare Tunnel (or a local reverse proxy)
+      # reaches the container over the Compose network.
+      - '127.0.0.1:${SNAGLY_HOST_PORT:-4174}:4174'
+    volumes:
+      - snagly-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=${SNAGLY_TMP_SIZE:-512m},mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: ${SNAGLY_MEM_LIMIT:-1g}
+    cpus: ${SNAGLY_CPUS:-1.5}
+    pids_limit: 256
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4174/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # Optional Cloudflare Tunnel. Start with:
+  #   docker compose --profile tunnel up -d
+  # Set CLOUDFLARE_TUNNEL_TOKEN in .env first.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.11.2
+    profiles: ['tunnel']
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    depends_on:
+      snagly:
+        condition: service_healthy
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+volumes:
+  snagly-data:
+    name: snagly-data

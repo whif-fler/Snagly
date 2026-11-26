@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log*
+coverage
+data
+.git
+.gitignore
+.github
+tests
+test
+docs/screenshot.png
+*.log
+.env
+.env.*
+!.env.example
+backups
