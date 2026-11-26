@@ -288,7 +288,9 @@ test('download links are scoped, tamper-proof and expire with the job', async (t
   assert.equal((await fetch(`${server.base}${tokenOnOtherJob}`)).status, 403);
 
   const originalToken = new URL(track.downloadUrl, server.base).searchParams.get('token');
-  const tamperedToken = `${originalToken.slice(0, -1)}${originalToken.endsWith('x') ? 'y' : 'x'}`;
+  // Flip a character in the signed payload, not the base64url MAC tail: the
+  // final character carries padding bits, so changing it is sometimes a no-op.
+  const tamperedToken = `${originalToken[0] === 'a' ? 'b' : 'a'}${originalToken.slice(1)}`;
   const tampered = track.downloadUrl.replace(originalToken, tamperedToken);
   assert.equal((await fetch(`${server.base}${tampered}`)).status, 403);
 
