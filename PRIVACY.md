@@ -50,7 +50,7 @@ following requests do leave your computer:
 
 | Destination | What is sent | When | Can you avoid it? |
 |---|---|---|---|
-| YouTube / Google (`youtube.com`, `googlevideo.com`) via `yt-dlp` | The link you paste, your IP address, normal HTTP metadata, and — only if browser sign-in is on — your YouTube cookies | When you preview or download a link | Not without giving up the app's purpose. Turn off browser sign-in to stop cookie use |
+| YouTube / Google (`youtube.com`, `googlevideo.com`) via `yt-dlp` | The link you paste, your IP address, normal HTTP metadata, and — only if YouTube sign-in is on — your YouTube cookies | When you preview or download a link | Not without giving up the app's purpose. Turn off YouTube sign-in to stop cookie use |
 | YouTube image hosts (`i.ytimg.com`, `img.youtube.com`, `yt3.ggpht.com`, `lh3.googleusercontent.com`) | A normal image request from the local Snagly server, including your IP address. Your browser never contacts these hosts directly | When thumbnails or cover art are first shown, then from the local cache | Not currently configurable; the UI falls back to a letter tile if the image fails |
 | GitHub (`github.com`) | A normal web request | Only if you click a repository link | Yes — do not click the link |
 
