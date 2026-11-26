@@ -180,8 +180,9 @@ The UI talks to the server through these endpoints. They are all local-only.
 ## Troubleshooting
 
 **"YouTube asked for a sign-in check"**
-Sign in to YouTube in Chrome or Edge, keep **Use browser sign-in** enabled, and
-retry the failed tracks. Updating yt-dlp often fixes this too:
+Sign in to YouTube in Chrome or Edge, then retry the failed tracks. Snagly passes
+your browser cookies to yt-dlp automatically when it finds a browser profile.
+Updating yt-dlp often fixes this too:
 
 ```powershell
 winget upgrade --id yt-dlp.yt-dlp -e
