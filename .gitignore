@@ -1,0 +1,13 @@
+# Runtime data: job state, downloaded-track records, playlist cache
+data/
+
+# Node (the app has no dependencies, but be safe)
+node_modules/
+
+# Logs
+*.log
+
+# OS cruft
+Thumbs.db
+desktop.ini
+.DS_Store
