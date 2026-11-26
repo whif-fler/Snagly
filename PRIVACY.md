@@ -2,157 +2,179 @@
 
 **Last updated: 27 November 2026**
 
-Snagly is a local Windows application. It runs a small web server on your own
-computer and stores everything it knows in a folder next to the app. There is
-no Snagly account, no Snagly cloud, no analytics, no telemetry, no advertising,
-and no developer-operated server.
+Snagly has two modes. They handle data differently, so this policy describes both.
 
-This document explains exactly what stays on your machine, what leaves it, and
-how to delete it.
+- **Local mode** (`node server.js`) runs only on your Windows computer. No Snagly
+  account, cloud or developer server is involved.
+- **Cloud mode** (`apps/server`, usually in Docker) is software that someone —
+  you or an operator you trust — runs on a server. That operator can access the
+  server and its stored files.
+
+Snagly contains no analytics, telemetry, advertising or third-party scripts in
+either mode.
 
 ## The short version
 
-- **Snagly does not collect or transmit personal data to the developer.**
-- **Snagly sets no cookies and has no sessions.**
-- The only network traffic is between your computer and **YouTube/Google**
-  (through `yt-dlp`). Cover art is fetched by the local server, not by your
-  browser, so the browser only talks to `127.0.0.1`.
-- Your playlist history, settings and downloaded-file records live in
-  `data/` beside `server.js`.
-- Downloaded music and video live in the folder you choose.
-- YouTube sign-in is optional, off until you enable it, and can be turned off
-  at any time. When enabled, `yt-dlp` reads your YouTube cookies from your local
-  Chrome, Edge or Firefox profile. Those cookies are never written into Snagly's
-  state file and never sent to the developer.
+### Local mode
 
-## What is stored on your device
+- Everything stays on your computer.
+- Snagly sets no cookies and has no sessions.
+- The only outbound traffic is to YouTube/Google, for links you paste.
+- YouTube sign-in is optional, off by default, and read locally by `yt-dlp`.
 
-| Location | Contents | Why |
-|---|---|---|
-| `data/state.json` | Playlist and track titles, artist names, file paths, file sizes, timestamps, job status, settings | So the library survives a restart and already-downloaded tracks are skipped |
-| `data/state.backup.json` | A copy of the previous state file | Recovery if a write is interrupted |
-| `data/cache/*.json` | Playlist metadata and available-format results | Avoids asking YouTube for the same playlist on every keystroke |
-| `data/cache/thumbs/` | Cached thumbnail images (one file per cover) | Lets the UI show cover art without the browser contacting Google |
-| Your chosen save folder | The audio/video files Snagly downloads, with embedded tags and cover art | That is the product |
-| Browser `localStorage` | `reel-theme` (light/dark), `snagly-cookie-choice` (whether you have answered the sign-in prompt) | Remembers UI preferences |
-| `cookies.txt` (optional) | A Netscape-format cookie export you place in the Snagly folder yourself | Optional fallback when the browser cookie database is locked |
-| `%TEMP%` | Short-lived `snagly-meta-*` and `snagly-out-*` files while FFmpeg rewrites tags | Deleted immediately after each tag write |
+### Cloud mode
 
-`data/` is excluded from Git, and Snagly restricts its Windows permissions to
-your account (plus SYSTEM and Administrators) when the folder lives on NTFS. It
-is plain JSON, not encrypted, so anyone who can sign in as your Windows user can
-read it. Windows account security is the boundary.
+- A random session cookie identifies your browser; there are no passwords.
+- The server stores your job metadata and downloaded files for a limited time
+  (24 hours by default) so you can save them to your device.
+- The server operator can read everything stored on the server.
+- The server fetches YouTube pages and thumbnails using its own IP address. Your
+  personal YouTube cookies are never used.
+- Cloudflare (or your reverse proxy) and the hosting provider process network
+  metadata such as IP addresses.
 
-## What leaves your device
+## Local mode data
 
-Snagly itself contacts no server other than the YouTube URLs you give it. The
-following requests do leave your computer:
+| Location                 | Contents                                                                        | Why                                                         |
+| ------------------------ | ------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `data/state.json`        | Playlist/track titles, artists, file paths, sizes, timestamps, status, settings | Keeps the library across restarts and skips existing tracks |
+| `data/state.backup.json` | Previous state file                                                             | Recovery after an interrupted write                         |
+| `data/cache/`            | Playlist metadata, format probes and thumbnails                                 | Avoids repeat requests and keeps the browser off Google     |
+| Your save folder         | Downloaded media with embedded tags/art                                         | The output you asked for                                    |
+| Browser `localStorage`   | Theme choice and sign-in prompt answer                                          | UI preferences                                              |
+| `cookies.txt` (optional) | A cookie export you place next to `server.js`                                   | Optional fallback for YouTube sign-in                       |
+| `%TEMP%`                 | Short-lived files while FFmpeg rewrites tags                                    | Deleted after each write                                    |
 
-| Destination | What is sent | When | Can you avoid it? |
-|---|---|---|---|
-| YouTube / Google (`youtube.com`, `googlevideo.com`) via `yt-dlp` | The link you paste, your IP address, normal HTTP metadata, and — only if YouTube sign-in is on — your YouTube cookies | When you preview or download a link | Not without giving up the app's purpose. Turn off YouTube sign-in to stop cookie use |
-| YouTube image hosts (`i.ytimg.com`, `img.youtube.com`, `yt3.ggpht.com`, `lh3.googleusercontent.com`) | A normal image request from the local Snagly server, including your IP address. Your browser never contacts these hosts directly | When thumbnails or cover art are first shown, then from the local cache | Not currently configurable; the UI falls back to a letter tile if the image fails |
-| GitHub (`github.com`) | A normal web request | Only if you click a repository link | Yes — do not click the link |
+`data/` is excluded from Git. On NTFS, Snagly restricts the folder to your Windows
+account (plus SYSTEM/Administrators). It is plain JSON, not encrypted, so anyone
+who can sign in as you can read it. Your Windows account is the boundary.
 
-Snagly sends **nothing** to the developer: no usage data, no crash reports, no
-identifiers, no analytics events.
+Local mode sets **no cookies** and has **no server-side session**.
 
-**Export history** is different: it is a CSV file created only when you click
-the button. It stays on your computer, but it contains the full paths of your
-downloaded files, which can reveal your Windows username and folder layout.
-Review it before sharing it with anyone.
+## Cloud mode data
 
-## Cookies and browser sign-in
+| Location                                              | Contents                                                                       | Why                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| SQLite database                                       | User ID, session hashes, CSRF tokens, job/track metadata, settings, timestamps | Queue, library, ownership and progress                  |
+| `<data>/users/<user>/<job>/`                          | Downloaded media files                                                         | Server-side processing and delivery                     |
+| `<data>/cache/thumbs/`                                | Cached thumbnails                                                              | Avoids repeat requests and keeps the browser off Google |
+| `<data>/.download-secret` or `SNAGLY_DOWNLOAD_SECRET` | HMAC key for download links                                                    | Signs expiring file/ZIP URLs                            |
+| Browser cookie `snagly_sid`                           | Random session token                                                           | Identifies the anonymous user                           |
+| Browser `localStorage` / IndexedDB                    | Theme, saved-track flags, optional folder handle                               | UI state and browser folder saving                      |
 
-**Snagly does not set cookies.** There is no `Set-Cookie` header, no login, and
-no server-side session.
+The database stores only a SHA-256 hash of the session token, not the token
+itself. Download URLs contain short-lived HMAC tokens. Anyone who obtains one can
+use it until it expires, so treat those URLs as secrets.
 
-The **Use YouTube sign-in** toggle controls a different thing: YouTube often
-shows a "confirm you're not a bot" check. To get past it, `yt-dlp` can read the
-YouTube cookies that already exist in your local Chrome, Edge or Firefox
-profile. This is what the toggle enables.
+**The server operator can access all cloud data**, including media files and job
+metadata, and can inspect logs and backups. If you are not the operator, ask them
+how long data is kept and who can access it.
 
-When it is on:
+Cloud mode never reads browser cookie stores or `cookies.txt`, and it does not
+accept local filesystem paths from the browser.
 
-- `yt-dlp` reads the browser's cookie database **on your computer**.
-- The cookies are used only for requests to YouTube.
-- They are **not** copied into `data/state.json`, logs, or exported history.
-- They are **not** sent to the developer or any third party other than Google.
-- If the cookie database is locked (the browser is running), the download
-  continues without cookies and Snagly tells you.
+## Cookies and sign-in
 
-Alternatively, you can export a Netscape-format `cookies.txt` with a browser
-extension and place it beside `server.js`. Snagly uses it instead of the browser
-database, which avoids the lock problem. That file contains your YouTube
-credentials: it is listed in `.gitignore`, it is never uploaded, and you should
-delete it when you no longer need it.
+### Local mode
 
-You can turn sign-in off at any time in the composer footer or by editing
-`data/state.json` (`"useCookies": false`). On first visit Snagly asks once
-whether to enable it, and it stays off until you say yes.
+The **Use YouTube sign-in** toggle controls whether `yt-dlp` may read the YouTube
+cookies already stored in your local Chrome, Edge or Firefox profile. When on:
 
-## No tracking, no profiles
+- cookies are read on your computer, only for YouTube requests;
+- they are not written into `data/state.json` or exported history;
+- they are not sent to the developer or any party other than Google.
 
-Snagly contains no analytics SDK, no advertising SDK, no crash reporter, no
-fingerprinting, and no third-party fonts or scripts. The Inter font is served
-from the app's own `public/assets/fonts/` folder. The Content-Security-Policy
-blocks scripts and styles from other origins.
+An optional Netscape-format `cookies.txt` next to `server.js` takes priority and
+is used the same way. It contains credentials; never commit it.
 
-## How to delete your data
+### Cloud mode
 
-| To delete | Do this |
-|---|---|
-| Playlist history and settings | Close Snagly, then delete the `data/` folder |
-| Cached playlist metadata and thumbnails | Use **Clear cache** in the app, or delete `data/cache/` |
-| Downloaded media | Delete the files in your chosen save folder |
-| A `cookies.txt` file | Delete `cookies.txt` beside `server.js` |
-| Browser preferences | Clear site data for Snagly's address (usually `localhost:4173`) in your browser |
-| Everything | Delete `data/`, `cookies.txt`, your save folder, and the browser site data |
+Cloud mode does **not** use personal YouTube cookies. It uses only the server's
+own requests. The only cookie Snagly sets is the `snagly_sid` session cookie,
+which is `HttpOnly`, `SameSite=Lax`, and `Secure` when HTTPS is configured. It
+contains a random identifier, not personal information.
 
-Deleting `data/` does not delete downloaded files. Deleting downloaded files
-does not remove the history entries until the library is refreshed.
+## What leaves the device or server
 
-## Third-party services
+| Destination                   | What is sent                                                | When                                   |
+| ----------------------------- | ----------------------------------------------------------- | -------------------------------------- |
+| YouTube / Google              | The link you paste, the requesting IP, normal HTTP metadata | Preview, probe and download            |
+| YouTube image hosts           | An image request from the Snagly server, including its IP   | When thumbnails are first shown/cached |
+| Cloudflare / hosting provider | Normal network metadata (IP, TLS, request timing)           | Every cloud request                    |
+| GitHub                        | A normal web request                                        | Only if you click a repository link    |
 
-Snagly relies on:
+Local mode sends nothing to the developer. Cloud mode sends nothing to the
+developer either; the operator is the party running the server.
 
-- **YouTube / Google** — the source of the media and the subject of your
-  requests. Google's own privacy policy applies to those requests.
-- **yt-dlp** and **FFmpeg** — local command-line tools installed through
-  winget. They run on your machine. Each project has its own documentation.
-- **GitHub** — only if you visit the repository or download a release.
+**Export history** creates a CSV only when you click the button. In local mode it
+contains full file paths, which can reveal your Windows username and folder
+layout. In cloud mode it contains filenames and job identifiers. Review it before
+sharing.
+
+## Retention and deletion
+
+### Local mode
+
+- History/settings: close Snagly and delete `data/`.
+- Cache/thumbnails: **Clear cache** or delete `data/cache/`.
+- Media: delete the files in your save folder.
+- `cookies.txt`: delete it next to `server.js`.
+- Browser preferences: clear site data for the local address.
+
+### Cloud mode
+
+- Finished jobs and files expire after `SNAGLY_RETENTION_HOURS` (default 24) and
+  are removed by scheduled cleanup.
+- **Remove** in the library deletes the server copy of that job immediately.
+- Cancelling or failing a job does not keep it forever; it follows the same
+  retention/cleanup rules.
+- Sessions expire after `SNAGLY_SESSION_TTL_DAYS` (default 30).
+- Clearing site data removes the browser's session cookie and saved-folder handle,
+  but does not delete server data. Use **Remove** for that, or ask the operator.
+- The operator can delete the whole data volume; this is irreversible.
+
+Backups may retain deleted data until the operator rotates them. Ask the operator
+for the backup schedule.
+
+## Third parties
+
+- **YouTube / Google** — source of media and recipient of requests; Google's
+  privacy policy applies.
+- **yt-dlp** and **FFmpeg** — run on the local machine or the server.
+- **Cloudflare** — optional TLS/tunnel provider in cloud mode.
+- **GitHub** — only if you visit the repository.
 
 Snagly is not affiliated with YouTube or Google.
 
 ## Children's privacy
 
-Snagly is a general-purpose local tool. It does not knowingly collect personal
-information from anyone, including children, because it does not collect
-personal information at all.
+Snagly does not knowingly collect personal information from anyone, including
+children. Cloud mode stores only the anonymous session identifier and the media
+metadata needed to operate the queue. An operator who needs verifiable parental
+consent or age controls must add them at the deployment layer.
 
 ## Security
 
-Snagly binds its web server to `127.0.0.1`, validates the `Host` and `Origin`
-headers, requires JSON request bodies, restricts the API to YouTube URLs, and
-confines file operations to your library folder. Thumbnails are fetched by the
-server from a small allow-list of YouTube image hosts, with redirects disabled,
-so a thumbnail URL cannot be used to reach your network. See the audit notes in
-the repository for details.
+Cloud mode validates Host and Origin, requires CSRF tokens on unsafe requests,
+isolates users by ID, signs download links, restricts thumbnails to YouTube image
+hosts, runs media tools without a shell, and applies rate and size limits. See
+[`SECURITY.md`](SECURITY.md) for controls and residual risks.
 
-## Changes to this policy
+No system is perfect. If you find a vulnerability, report it privately as
+described in `SECURITY.md`.
 
-If Snagly's data handling changes, this document will be updated in the same
-commit as the code change. The "Last updated" date above reflects the current
-version.
+## Changes
+
+If data handling changes, this document and the in-app privacy page are updated
+in the same commit. The date at the top reflects the current version.
 
 ## Contact
 
-Questions or corrections: open an issue at
-<https://github.com/whif-fler/Snagly/issues>.
+Questions or corrections:
+[open an issue](https://github.com/whif-fler/Snagly/issues).
 
 ## Legal note
 
 Downloading content may be restricted by YouTube's Terms of Service and by
-copyright law in your country. Snagly is a downloader; it does not grant you
-rights to any content. You are responsible for what you download and how you
-use it.
+copyright law where you live. Snagly does not grant rights to any content. You and
+the operator are responsible for what is downloaded, stored and shared.
