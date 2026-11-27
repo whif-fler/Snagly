@@ -29,7 +29,7 @@ without changing what the server is allowed to do.
   could be driven deterministically without writing to the real disk.
 - Injected a one-off `401` on `/api/jobs` to exercise session expiry.
 - Ran the legacy local app on port 4173 to confirm local mode still shows folder
-  selection, sign-in state and local-only settings.
+  selection, guest-only access and local-only settings.
 - Ran the same local app with real `yt-dlp` and FFmpeg: downloaded an MP3 at
   320 kbps and a 360p MP4 merge, loaded real YouTube artwork through `/api/thumb`,
   then deleted the MP3 through the new "Delete files" action and confirmed the
@@ -152,6 +152,8 @@ mode, and every explanation lives on the surface where the decision is made.
   "Delete all downloads". Both aggregate failures instead of stopping on the
   first active job, and neither claims to delete files outside the recorded
   downloads.
+- Each tile has a direct "Remove" action, which is the single-item version of
+  library deletion. Its confirmation states whether downloaded files stay on disk.
 - "Select downloads" adds a selection mode: click tiles (or Select all for the
   current filter), then "Remove" the chosen entries together. Local mode also
   offers "Delete files", which removes only the media recorded for those jobs;
@@ -166,8 +168,10 @@ Five tabs, with mode-inapplicable sections removed rather than disabled:
 - **Downloads** – default format, a real duplicate-policy select (always ask /
   skip), and a note explaining that quality is chosen per source in the
   composer.
-- **Storage** – folder, auto-save, retention; cloud variant explains server
-  retention and device saving without exposing worker controls.
+- **Storage** - folder, auto-save, retention; cloud variant explains server
+  retention and device saving without exposing worker controls. The local variant
+  edits the save folder in place, with Browse and Save, and says that only new
+  downloads use the new path.
 - **Connections** – guest-only status, the trust boundary, and a clear statement
   that Snagly does not use cookies, passwords or OAuth and that some videos may
   fail. It also states that this build is not a desktop app.
@@ -209,7 +213,7 @@ users.
   7.73:1. Violet fills with white text remain unchanged.
 - The settings footer had a bare `span` selector that styled every nested span;
   it now targets only the direct status copy.
-- Cookie warnings use the existing warning tokens: 7.58:1 in dark mode.
+- Access warnings use the existing warning tokens: 7.58:1 in dark mode.
 - Standardised radii, hairlines, spacing and type scale; removed the extra
   card-inside-card treatment from the composer and settings.
 - Added reduced-motion handling for progress and transitions.
@@ -218,32 +222,34 @@ users.
 
 ## Journeys verified
 
-| Journey                     | Result                                                                                                                                        | Evidence                                                                                                                        |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| First visit, empty library  | Empty state explains the next action; composer is the only focus.                                                                             | `after-1440-light.png`                                                                                                          |
-| Single video download       | One track, correct title, completes through every stage.                                                                                      | `after-activity-running.png`                                                                                                    |
-| Playlist download           | Three tracks, playlist folder naming preserved.                                                                                               | `after-1440-autosaved.png`                                                                                                      |
-| Track selection             | 3→2 selection, live summary, correct 2-track job, singular/plural toast.                                                                      | `after-selection-panel.png`, `after-selection-download.png`                                                                     |
-| Duplicate submission        | "Already in this session"; Skip leaves the job count unchanged; skip toast.                                                                   | `after-duplicate-confirm.png`                                                                                                   |
-| Guest-only access           | No cookie toggle or `cookies.txt` path in the DOM; Connections shows "Guest"; a real public MP3 downloaded without cookie arguments.          | `settings-connections-guest-1440.png`, `settings-connections-guest-dark-1440.png`, `settings-connections-guest-mobile-dark.png` |
-| Duplicate policy            | Settings select persisted "Skip duplicates"; re-adding the same link produced one skip toast and no extra job, in local and mock cloud modes. | `settings-downloads-1440.png`                                                                                                   |
-| Real local MP3              | 320 kbps CBR file, 19.005 s, exact 320000 b/s stream, correct title/artist tags, real artwork.                                                | `after-real-media-1440.png`                                                                                                     |
-| Real local MP4              | 360p AV1 + AAC merge, 47,286,721 bytes, 634.6 s.                                                                                              | `after-real-media-1440.png`                                                                                                     |
-| Delete one download         | "Delete files" removed the real MP3 from disk, removed the library entry, and left the shared folder and the other download intact.           | `delete-files-modal-1440.png`                                                                                                   |
-| Delete all downloads        | Fresh local data directory: "Delete all downloads" removed the file and the entry together.                                                   | verified via UI + filesystem check                                                                                              |
-| Clear library               | Records removed in local and cloud modes; the local media file stayed on disk.                                                                | verified via UI + filesystem check                                                                                              |
-| Auto-save                   | 3 files written to `Mock Playlist PL1234567890/01…03`; tile turns saved; ZIP still offered.                                                   | `after-1440-autosaved.png`                                                                                                      |
-| Manual save                 | Folder chosen, 3 files written, badge "Saved to device", action becomes "Save again".                                                         | `after-manual-save.png`                                                                                                         |
-| Save again                  | Rewrites 3 files, toast "Saved 3 files to Snagly Test."                                                                                       | `after-save-again.png`                                                                                                          |
-| Unsupported browser         | Folder controls hidden, ZIP fallback explained, auto-save disabled.                                                                           | `after-unsupported-browser.png`                                                                                                 |
-| Revoked permission          | No writes; warning names the folder; one error toast.                                                                                         | `after-folder-revoked.png`                                                                                                      |
-| Expired job                 | "Expired" badge, disabled ZIP, "Download again", saved-files notice.                                                                          | `after-library-empty-expired.png`, `after-expired-modal.png`                                                                    |
-| Expired renewal             | New job created, expired entry removed, combined toast.                                                                                       | `after-expired-renewed.png`                                                                                                     |
-| Session expiry              | One explanatory toast, new anonymous session, library empty, saved files untouched.                                                           | `after-session-expired.png`                                                                                                     |
-| Library filters/search/sort | Saved filter, expired/running/failed/cancelled empty states, search miss, clear filters, name/track sort.                                     | `after-library-saved.png`                                                                                                       |
-| Settings tabs               | All five tabs render, mode-inapplicable sections hidden, focus held, Escape restores focus.                                                   | `after-settings-*.png`                                                                                                          |
-| Local mode                  | Folder path, browse, guest-only state; cloud retention hidden; no cookie controls.                                                            | `after-local-1440.png`, `after-local-settings-connections.png`                                                                  |
-| Dark and light themes       | Both themes across composer, library, modals, settings and 375 px.                                                                            | `after-1440-dark.png`, `after-375-dark.png`, `after-settings-375-dark.png`                                                      |
+| Journey                     | Result                                                                                                                                         | Evidence                                                                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| First visit, empty library  | Empty state explains the next action; composer is the only focus.                                                                              | `after-1440-light.png`                                                                                                          |
+| Single video download       | One track, correct title, completes through every stage.                                                                                       | `after-activity-running.png`                                                                                                    |
+| Playlist download           | Three tracks, playlist folder naming preserved.                                                                                                | `after-1440-autosaved.png`                                                                                                      |
+| Track selection             | 3→2 selection, live summary, correct 2-track job, singular/plural toast.                                                                       | `after-selection-panel.png`, `after-selection-download.png`                                                                     |
+| Duplicate submission        | "Already in this session"; Skip leaves the job count unchanged; skip toast.                                                                    | `after-duplicate-confirm.png`                                                                                                   |
+| Guest-only access           | No cookie toggle or `cookies.txt` path in the DOM; Connections shows "Guest"; a real public MP3 downloaded without cookie arguments.           | `settings-connections-guest-1440.png`, `settings-connections-guest-dark-1440.png`, `settings-connections-guest-mobile-dark.png` |
+| Duplicate policy            | Settings select persisted "Skip duplicates"; re-adding the same link produced one skip toast and no extra job, in local and mock cloud modes.  | `settings-downloads-1440.png`                                                                                                   |
+| Real local MP3              | 320 kbps CBR file, 19.005 s, exact 320000 b/s stream, correct title/artist tags, real artwork.                                                 | `after-real-media-1440.png`                                                                                                     |
+| Real local MP4              | 360p AV1 + AAC merge, 47,286,721 bytes, 634.6 s.                                                                                               | `after-real-media-1440.png`                                                                                                     |
+| Delete one download         | "Delete files" removed the real MP3 from disk, removed the library entry, and left the shared folder and the other download intact.            | `delete-files-modal-1440.png`                                                                                                   |
+| Remove one download         | Tile "Remove" dropped only that library entry; the recorded MP3 stayed on disk and the other download was untouched.                           | `remove-one-confirm-1440.png`, `tile-remove-mobile.png`                                                                         |
+| Change the save folder      | Settings → Storage accepted a new absolute path, rejected a relative one, created the folder, and the next real MP3 landed under the new root. | `settings-storage-folder-1440.png`, `settings-storage-folder-mobile.png`                                                        |
+| Delete all downloads        | Fresh local data directory: "Delete all downloads" removed the file and the entry together.                                                    | verified via UI + filesystem check                                                                                              |
+| Clear library               | Records removed in local and cloud modes; the local media file stayed on disk.                                                                 | verified via UI + filesystem check                                                                                              |
+| Auto-save                   | 3 files written to `Mock Playlist PL1234567890/01…03`; tile turns saved; ZIP still offered.                                                    | `after-1440-autosaved.png`                                                                                                      |
+| Manual save                 | Folder chosen, 3 files written, badge "Saved to device", action becomes "Save again".                                                          | `after-manual-save.png`                                                                                                         |
+| Save again                  | Rewrites 3 files, toast "Saved 3 files to Snagly Test."                                                                                        | `after-save-again.png`                                                                                                          |
+| Unsupported browser         | Folder controls hidden, ZIP fallback explained, auto-save disabled.                                                                            | `after-unsupported-browser.png`                                                                                                 |
+| Revoked permission          | No writes; warning names the folder; one error toast.                                                                                          | `after-folder-revoked.png`                                                                                                      |
+| Expired job                 | "Expired" badge, disabled ZIP, "Download again", saved-files notice.                                                                           | `after-library-empty-expired.png`, `after-expired-modal.png`                                                                    |
+| Expired renewal             | New job created, expired entry removed, combined toast.                                                                                        | `after-expired-renewed.png`                                                                                                     |
+| Session expiry              | One explanatory toast, new anonymous session, library empty, saved files untouched.                                                            | `after-session-expired.png`                                                                                                     |
+| Library filters/search/sort | Saved filter, expired/running/failed/cancelled empty states, search miss, clear filters, name/track sort.                                      | `after-library-saved.png`                                                                                                       |
+| Settings tabs               | All five tabs render, mode-inapplicable sections hidden, focus held, Escape restores focus.                                                    | `after-settings-*.png`                                                                                                          |
+| Local mode                  | Folder path, browse, guest-only state; cloud retention hidden; no cookie controls.                                                             | `after-local-1440.png`, `after-local-settings-connections.png`                                                                  |
+| Dark and light themes       | Both themes across composer, library, modals, settings and 375 px.                                                                             | `after-1440-dark.png`, `after-375-dark.png`, `after-settings-375-dark.png`                                                      |
 
 ## Responsive results
 
@@ -373,3 +379,7 @@ After, guest-only and deletion: `settings-connections-guest-1440.png`,
 After, library selection: `selection-mode-1440.png`, `selection-mode-mobile.png`,
 `selection-mode-cloud-1440.png`, `selection-remove-confirm-1440.png`,
 `selection-delete-confirm-1440.png`.
+
+After, single-item deletion and storage: `remove-one-confirm-1440.png`,
+`tile-remove-mobile.png`, `settings-storage-folder-1440.png`,
+`settings-storage-folder-mobile.png`.

@@ -582,6 +582,13 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     if (body.workers !== undefined) engine.setWorkers(body.workers);
     if (body.isVideo !== undefined) engine.setIsVideo(Boolean(body.isVideo));
+    if (body.root !== undefined) {
+      try {
+        engine.setRoot(body.root);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message });
+      }
+    }
     return sendJson(res, 200, engine.getStatus());
   }
 

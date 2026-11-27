@@ -262,6 +262,10 @@ Body: `{ "paused": true }`. Per-user; pausing stops new tracks for that user onl
 Body may contain `isVideo` and/or `paused`. Worker counts are ignored in cloud
 mode. Returns the updated status.
 
+The original local app also accepts `workers` and `root`. `root` must be an absolute,
+writable directory; the app creates it if needed and uses it for new downloads. The
+cloud server rejects or ignores `root` because users never choose server paths.
+
 ### `POST /api/cache/clear`
 
 Clears only the caller's in-memory preview cache. Returns `{ "removed": 3 }`.

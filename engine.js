@@ -1290,6 +1290,14 @@ function setIsVideo(value) {
   broadcast();
 }
 
+function setRoot(requested) {
+  const root = prepareRoot(requested);
+  state.root = root;
+  saveState();
+  broadcast();
+  return root;
+}
+
 function deleteJobFiles(jobId) {
   const job = state.jobs.find((j) => j.id === jobId);
   if (!job) return { error: 'missing' };
@@ -1547,6 +1555,7 @@ module.exports = {
   setPaused,
   setWorkers,
   setIsVideo,
+  setRoot,
   removeJob,
   deleteJobFiles,
   cancelJob,

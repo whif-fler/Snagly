@@ -928,6 +928,7 @@ button { cursor: pointer; }
   color: var(--signal);
   font-weight: 500;
 }
+.tile-actions button.tile-remove { color: var(--danger); }
 .tile-actions button:hover { text-decoration: underline; }
 
 /* Selection mode */
@@ -981,26 +982,6 @@ button { cursor: pointer; }
 .toast strong { display: block; font-weight: 600; margin-bottom: 2px; }
 
 .footer-left { display: flex; align-items: center; gap: 10px; }
-
-.cookie-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--faint);
-  cursor: pointer;
-  user-select: none;
-}
-
-.cookie-toggle input {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: var(--signal);
-  cursor: pointer;
-}
-
-.cookie-toggle.disabled { opacity: .5; cursor: not-allowed; }
 
 #urls.drag {
   outline: 2px dashed var(--signal);
@@ -1237,13 +1218,6 @@ button { cursor: pointer; }
 .privacy-link {
   font-size: 12px;
   white-space: nowrap;
-}
-
-.cookie-toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 /* Privacy page */
@@ -1730,6 +1704,22 @@ button { cursor: pointer; }
 }
 .settings-row + .settings-row { border-top: 1px solid var(--hairline-soft); }
 .settings-row-stack { align-items: flex-start; }
+.settings-row-folder { flex-direction: column; align-items: stretch; gap: 9px; }
+.settings-path-row { display: flex; align-items: center; gap: 8px; }
+.settings-path-row input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.settings-path-row input:focus-visible { outline-offset: 2px; }
+.settings-path-row .quiet-button { flex: none; }
 .settings-row-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .settings-label { font-size: 13.5px; font-weight: 500; }
 .settings-help { color: var(--muted); font-size: 12.5px; line-height: 1.45; max-width: 52ch; }
@@ -1900,6 +1890,9 @@ button { cursor: pointer; }
   .segmented button { flex: 1; padding: 0 6px; }
   .settings-actions { width: 100%; }
   .settings-actions .quiet-button { flex: 1; }
+  .settings-path-row { flex-wrap: wrap; }
+  .settings-path-row input { flex: 1 1 100%; }
+  .settings-path-row .quiet-button { flex: 1; }
   .settings-foot { flex-direction: column-reverse; align-items: stretch; }
   .settings-foot .primary-button { width: 100%; }
   .track-modal-actions { grid-template-columns: 1fr; }

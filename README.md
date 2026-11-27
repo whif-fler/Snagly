@@ -148,8 +148,8 @@ FFmpeg. This is the engine used by the automated tests.
 
 1. Paste one or more playlist or video links, one per line.
 2. Choose **Audio** or **Video**, then pick a quality.
-3. _Local mode:_ set **Save to**. _Cloud mode:_ choose a save folder once, or use
-   the per-job ZIP/individual downloads.
+3. _Local mode:_ set **Save to**, or change it later in **Settings → Storage**.
+   _Cloud mode:_ choose a save folder once, or use the per-job ZIP/individual downloads.
 4. Optionally open **Choose tracks** to preview the playlist and select a subset.
 5. Press **Download**.
 6. In cloud mode, finished files remain on the server for the retention period

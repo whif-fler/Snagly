@@ -134,7 +134,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 8v5M12 16.5v.5"/><path d="M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
       </span>
       <div class="access-notice-copy">
-        <strong id="accessNoticeTitle">YouTube is asking for a sign-in check</strong>
+        <strong id="accessNoticeTitle">YouTube blocked guest access</strong>
         <span id="accessNoticeText"></span>
       </div>
       <button class="quiet-button" id="accessNoticeButton" type="button">How access works</button>
@@ -370,7 +370,18 @@
               </div>
               <div class="settings-section" id="localStorageSection" hidden>
                 <h3>Files on this computer</h3>
-                <p class="settings-note">The local app writes finished files to the folder in the composer. Use Browse to change it. Nothing is uploaded.</p>
+                <div class="settings-row settings-row-folder">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">Save folder</span>
+                    <span class="settings-help" id="settingsLocalHelp">New downloads are written here. Existing files stay in their current folders.</span>
+                  </div>
+                  <div class="settings-path-row">
+                    <input id="settingsLocalRoot" type="text" spellcheck="false" autocomplete="off" aria-label="Save folder path" placeholder="C:\Users\you\Music">
+                    <button class="quiet-button" id="settingsLocalBrowse" type="button">Browse</button>
+                    <button class="quiet-button" id="settingsLocalSave" type="button">Save</button>
+                  </div>
+                </div>
+                <p class="settings-note">Nothing is uploaded. Snagly creates the folder if it does not exist.</p>
               </div>
             </section>
 
@@ -384,15 +395,7 @@
                   </div>
                   <span class="status-badge" id="youtubeStatus">Guest</span>
                 </div>
-                <label class="settings-toggle" id="cookieToggleRow">
-                  <input type="checkbox" id="cookieToggle">
-                  <span>
-                    <strong>Use YouTube sign-in for local downloads</strong>
-                    <small id="cookieSourceNote">Local only. Nothing is uploaded.</small>
-                  </span>
-                </label>
-                <p class="settings-note settings-risk" id="cookieRiskNote">Using signed-in cookies lets yt-dlp make requests as your account. Automated downloads can still be rate-limited, challenged or, in rare cases, restricted, so leave this off unless you need it. Treat <code>cookies.txt</code> like a password, and only download media you have the rights to.</p>
-                <p class="settings-note" id="youtubeNote">Snagly does not ask for your Google password and does not use Google OAuth. Local sign-in works by letting yt-dlp read cookies that already exist on this computer.</p>
+                <p class="settings-note" id="youtubeNote">Snagly does not use YouTube cookies, ask for a Google password or use Google OAuth. Age-restricted, private, members-only and bot-checked videos may fail.</p>
               </div>
               <div class="settings-section">
                 <h3>This session</h3>
@@ -402,7 +405,7 @@
               </div>
               <div class="settings-section">
                 <h3>Desktop app</h3>
-                <p class="settings-note">The planned desktop app will keep the current local sign-in behaviour: cookies stay on your computer and are never uploaded. It is not available yet.</p>
+                <p class="settings-note">The planned desktop app will keep the same guest-only access: no YouTube sign-in, cookies or account credentials. It is not available yet.</p>
               </div>
             </section>
 
@@ -411,7 +414,7 @@
                 <h3>What this app stores</h3>
                 <div class="settings-kv"><span>Processing</span><span id="privacyMode">On this computer</span></div>
                 <div class="settings-kv" id="privacyRetentionRow" hidden><span>Server copies</span><span id="privacyRetention">Expire after 24 hours</span></div>
-                <div class="settings-kv"><span>YouTube cookies</span><span id="privacyCookies">Local only</span></div>
+                <div class="settings-kv"><span>YouTube sign-in</span><span id="privacyCookies">Not used</span></div>
                 <div class="settings-kv"><span>Saved-file markers</span><span>This browser only</span></div>
               </div>
               <div class="settings-section">

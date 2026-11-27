@@ -8,9 +8,13 @@ All notable changes to Snagly are documented here. The format follows
 
 ### Added
 
+- Individual downloads can be removed straight from their library tile, with a
+  confirmation that says whether the files stay on disk.
 - Library selection mode: pick individual downloads, or all visible ones, and
   remove them together. Local mode also offers a bulk "Delete files" action; cloud
   mode removes only the server copies.
+- Settings → Storage now shows and changes the local save folder. The folder is
+  created if needed, and changing it only affects new downloads.
 
 ### Removed
 

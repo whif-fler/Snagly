@@ -100,6 +100,9 @@ const ui = {
   settingsDestination: $('settingsDestination'),
   settingsChooseFolder: $('settingsChooseFolder'),
   settingsForgetFolder: $('settingsForgetFolder'),
+  settingsLocalRoot: $('settingsLocalRoot'),
+  settingsLocalBrowse: $('settingsLocalBrowse'),
+  settingsLocalSave: $('settingsLocalSave'),
   autoSaveToggle: $('autoSaveToggle'),
   retentionRow: $('retentionRow'),
   settingsRetention: $('settingsRetention'),
@@ -140,6 +143,7 @@ let confirmReturnFocus = null;
 let confirmPreviousOverflow = '';
 let settingsReturnFocus = null;
 let activeSettingsTab = 'general';
+let localRootDirty = false;
 
 // Cloud mode is detected from /api/session. The legacy local server does not
 // expose it, so every branch below falls back to the original local behaviour.
@@ -873,6 +877,11 @@ function renderSettingsDialog() {
   ui.localStorageSection.hidden = isCloud;
   ui.retentionRow.hidden = !isCloud;
   ui.settingsRetentionValue.textContent = `${hours} hours`;
+  if (!isCloud && ui.settingsLocalRoot) {
+    const focused = document.activeElement === ui.settingsLocalRoot;
+    if (!localRootDirty && !focused) ui.settingsLocalRoot.value = status.root || '';
+    syncLocalRootButtons();
+  }
   ui.privacyRetentionRow.hidden = !isCloud;
   ui.privacyRetention.textContent = `${hours} hours`;
   ui.privacyMode.textContent = isCloud ? 'On this server' : 'On this computer';
@@ -1111,6 +1120,7 @@ function renderLibrary() {
             <button type="button" data-action="open">Open folder</button>
             <button type="button" data-action="zip" hidden>Download ZIP</button>
             <button type="button" data-action="retry" hidden>Retry failed</button>
+            <button type="button" data-action="remove" class="tile-remove" title="Remove from library">Remove</button>
           </div>
         </div>`;
       ui.filmstrip.insertBefore(tile, ui.emptyState);
@@ -1190,6 +1200,9 @@ function renderLibrary() {
     const retryable = (job.failed || 0) + (job.cancelled || 0) + (job.missing || 0);
     retryButton.hidden = retryable === 0 || expired;
     retryButton.textContent = job.failed || job.cancelled ? 'Retry failed' : 'Re-download missing';
+
+    const removeButton = tile.querySelector('[data-action="remove"]');
+    removeButton.hidden = job.status === 'running' || job.status === 'queued';
 
     const openButton = tile.querySelector('[data-action="open"]');
     const zipButton = tile.querySelector('[data-action="zip"]');
@@ -1558,6 +1571,43 @@ ui.settingsForgetFolder.addEventListener('click', async () => {
   toast('Folder forgotten. Choose a folder whenever you want to save again.');
 });
 
+ui.settingsLocalRoot.addEventListener('input', () => {
+  localRootDirty = true;
+  syncLocalRootButtons();
+});
+
+ui.settingsLocalRoot.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    saveLocalRoot();
+  }
+});
+
+ui.settingsLocalSave.addEventListener('click', saveLocalRoot);
+
+ui.settingsLocalBrowse.addEventListener('click', async () => {
+  const button = ui.settingsLocalBrowse;
+  button.disabled = true;
+  try {
+    const result = await api('/api/browse', {
+      method: 'POST',
+      body: JSON.stringify({ path: ui.settingsLocalRoot.value.trim() })
+    });
+    if (result.path) {
+      ui.settingsLocalRoot.value = result.path;
+      localRootDirty = true;
+      syncLocalRootButtons();
+      ui.settingsLocalRoot.focus();
+    } else if (result.error) {
+      toast(result.error, 'error');
+    }
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+});
+
 ui.resetSaved.addEventListener('click', async () => {
   const confirmed = await askConfirm({
     title: 'Forget saved-file markers?',
@@ -1640,6 +1690,7 @@ function setSettingsTab(name, { focus = false } = {}) {
 
 function openSettings(tab = 'general') {
   settingsReturnFocus = document.activeElement;
+  localRootDirty = false;
   renderSettingsDialog();
   ui.settingsModal.hidden = false;
   ui.settingsModal.setAttribute('aria-hidden', 'false');
@@ -1649,6 +1700,7 @@ function openSettings(tab = 'general') {
 
 function closeSettings() {
   if (ui.settingsModal.hidden) return;
+  localRootDirty = false;
   ui.settingsModal.hidden = true;
   ui.settingsModal.setAttribute('aria-hidden', 'true');
   document.body.style.overflow = '';
@@ -2336,6 +2388,33 @@ async function postSettings(patch) {
   }
 }
 
+function syncLocalRootButtons() {
+  if (!ui.settingsLocalRoot) return;
+  const value = ui.settingsLocalRoot.value.trim();
+  const current = String(status.root || '').trim();
+  ui.settingsLocalSave.disabled = !value || value === current;
+}
+
+async function saveLocalRoot() {
+  const value = ui.settingsLocalRoot.value.trim();
+  if (!value) {
+    toast('Enter a save folder first.', 'error');
+    return;
+  }
+  if (value === String(status.root || '').trim()) return;
+  syncLocalRootButtons();
+  try {
+    status = await api('/api/settings', { method: 'POST', body: JSON.stringify({ root: value }) });
+    localRootDirty = false;
+    ui.savePath.value = status.root;
+    renderSettingsDialog();
+    toast(`New downloads will be saved to ${status.root}.`);
+  } catch (err) {
+    toast(err.message, 'error');
+    syncLocalRootButtons();
+  }
+}
+
 ui.download.addEventListener('click', startDownload);
 ui.selectionDownload.addEventListener('click', startDownload);
 ui.urls.addEventListener('keydown', (event) => {
@@ -2562,6 +2641,10 @@ ui.filmstrip.addEventListener('click', async (event) => {
     toggleJobSelection(id);
     return;
   }
+  if (button.dataset.action === 'remove') {
+    await removeOneJob(job);
+    return;
+  }
   if (button.dataset.action === 'zip') {
     if (jobExpired(job)) {
       toast('That server copy has expired. Download it again to make a new copy.', 'error');
@@ -2695,52 +2778,57 @@ ui.modalCancel.addEventListener('click', async () => {
   }
 });
 
-ui.modalRemove.addEventListener('click', async () => {
-  if (!openModalJobId) return;
+async function removeOneJob(job, { withFiles = false } = {}) {
+  if (!job) return false;
+  if (job.status === 'running' || job.status === 'queued') {
+    toast('Cancel this download before removing it.', 'error');
+    return false;
+  }
+  if (withFiles && cloud.mode === 'cloud') return false;
+  const isCloud = cloud.mode === 'cloud';
+  const fileCount = job.tracks.filter((track) => track.file).length;
   const confirmed = await askConfirm({
-    title: 'Remove from library?',
-    message:
-      cloud.mode === 'cloud'
-        ? 'This deletes the server copies of these files. Files you already saved to your device are not affected.'
-        : 'Downloaded files stay on disk.',
-    confirmLabel: 'Remove',
+    title: withFiles ? 'Delete files from this computer?' : 'Remove from library?',
+    message: withFiles
+      ? `This permanently deletes ${fileCount} downloaded file${fileCount === 1 ? '' : 's'} from “${job.title}” and removes the library entry. Other files in the folder are not touched.`
+      : isCloud
+        ? 'This removes the download and its server copy. Files you already saved to this device stay where they are.'
+        : 'This removes the library entry. Downloaded files stay on this computer.',
+    confirmLabel: withFiles ? 'Delete files' : 'Remove',
     cancelLabel: 'Keep',
     danger: true
   });
-  if (!confirmed) return;
+  if (!confirmed) return false;
   try {
-    const ok = await api(`/api/jobs/${openModalJobId}`, { method: 'DELETE' });
-    if (ok.ok) {
-      closeTrackModal();
-      await refresh();
+    const result = await api(`/api/jobs/${job.id}${withFiles ? '?files=1' : ''}`, {
+      method: 'DELETE'
+    });
+    if (openModalJobId === job.id) closeTrackModal();
+    selectedJobs.delete(job.id);
+    await refresh();
+    if (withFiles) {
+      const removed = result.removedFiles ?? fileCount;
+      toast(`Deleted ${removed} file${removed === 1 ? '' : 's'} and removed the download.`);
+    } else {
       toast('Removed from library.');
     }
+    return true;
   } catch (err) {
     toast(err.message, 'error');
+    return false;
   }
+}
+
+ui.modalRemove.addEventListener('click', async () => {
+  const job = jobs.find((j) => j.id === openModalJobId);
+  if (!job) return;
+  await removeOneJob(job);
 });
 
 ui.modalDeleteFiles.addEventListener('click', async () => {
   const job = jobs.find((j) => j.id === openModalJobId);
   if (!job) return;
-  const fileCount = job.tracks.filter((track) => track.file).length;
-  const confirmed = await askConfirm({
-    title: 'Delete files from this computer?',
-    message: `This permanently deletes ${fileCount} downloaded file${fileCount === 1 ? '' : 's'} from “${job.title}” and removes the library entry. Other files in the folder are not touched.`,
-    confirmLabel: 'Delete files',
-    cancelLabel: 'Keep',
-    danger: true
-  });
-  if (!confirmed) return;
-  try {
-    const result = await api(`/api/jobs/${job.id}?files=1`, { method: 'DELETE' });
-    closeTrackModal();
-    await refresh();
-    const removed = result.removedFiles ?? fileCount;
-    toast(`Deleted ${removed} file${removed === 1 ? '' : 's'} and removed the download.`);
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+  await removeOneJob(job, { withFiles: true });
 });
 
 function selectedJobList() {
