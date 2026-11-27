@@ -7,7 +7,8 @@ const os = require('os');
 const path = require('path');
 const engine = require('../engine');
 
-const { sanitizeFolder, findTrackFile, findExisting, parseExtraction, prepareRoot, FORMATS, VIDEO_FORMATS } = engine._test;
+const { sanitizeFolder, findTrackFile, findExisting, parseExtraction, prepareRoot, FORMATS, VIDEO_FORMATS } =
+  engine._test;
 
 function tempDir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snagly-test-'));
@@ -32,21 +33,21 @@ test('video presets are ceilings, not exact matches', () => {
   assert.ok(VIDEO_FORMATS['1080p'].args.join(' ').includes('height<=1080'));
 });
 
-test('findTrackFile resolves a "best" download with any media extension', t => {
+test('findTrackFile resolves a "best" download with any media extension', (t) => {
   const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, '01 - Song.webm'), 'x');
   assert.equal(findTrackFile(dir, 1, 2, false, '', ''), '01 - Song.webm');
   assert.equal(findExisting(dir, 1, 2, ''), '01 - Song.webm');
 });
 
-test('findTrackFile ignores partial downloads', t => {
+test('findTrackFile ignores partial downloads', (t) => {
   const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, '01 - Song.mp3.part'), 'x');
   fs.writeFileSync(path.join(dir, '01 - Song.mp3'), 'x');
   assert.equal(findExisting(dir, 1, 2, '.mp3'), '01 - Song.mp3');
 });
 
-test('findTrackFile finds a single video by its bracketed id', t => {
+test('findTrackFile finds a single video by its bracketed id', (t) => {
   const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, 'A title [dQw4w9WgXcQ].mp4'), 'x');
   assert.equal(findTrackFile(dir, 1, 2, true, 'dQw4w9WgXcQ', '.mp4'), 'A title [dQw4w9WgXcQ].mp4');
@@ -65,7 +66,10 @@ test('parseExtraction reads a playlist payload and drops invalid video ids', () 
   const parsed = parseExtraction(JSON.stringify(payload));
   assert.equal(parsed.title, 'My Playlist');
   assert.equal(parsed.single, false);
-  assert.deepEqual(parsed.entries.map(e => e.id), ['dQw4w9WgXcQ', 'jNQXAC9IVRw']);
+  assert.deepEqual(
+    parsed.entries.map((e) => e.id),
+    ['dQw4w9WgXcQ', 'jNQXAC9IVRw']
+  );
   assert.equal(parsed.entries[0].artist, 'Artist');
 });
 
@@ -87,14 +91,16 @@ test('prepareRoot rejects relative paths', () => {
   assert.throws(() => prepareRoot(''), /required/);
 });
 
-test('prepareRoot creates and accepts an absolute directory', t => {
+test('prepareRoot creates and accepts an absolute directory', (t) => {
   const dir = path.join(tempDir(t), 'nested', 'library');
   assert.equal(prepareRoot(dir), path.normalize(dir));
   assert.equal(fs.existsSync(dir), true);
 });
 
-test('fresh installs keep browser cookies off until the user opts in', () => {
-  assert.equal(engine.getStatus().useCookies, false);
+test('local mode is guest-only and exposes no cookie controls', () => {
+  const status = engine.getStatus();
+  assert.equal('useCookies' in status, false);
+  assert.equal('cookieSource' in status, false);
 });
 
 test('fresh installs do not add a hidden collection folder', () => {

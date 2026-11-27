@@ -6,6 +6,24 @@ All notable changes to Snagly are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Library selection mode: pick individual downloads, or all visible ones, and
+  remove them together. Local mode also offers a bulk "Delete files" action; cloud
+  mode removes only the server copies.
+
+### Removed
+
+- YouTube cookie sign-in from local mode. Both modes are now guest-only: Snagly no
+  longer reads browser cookies or `cookies.txt`, and it has no cookie, password or
+  OAuth controls. Age-restricted, private, members-only and bot-checked videos may
+  fail.
+
+### Changed
+
+- Removed the `localBrowserCookies` capability and the local `useCookies` /
+  `cookieSource` status fields.
+
 ## [2.0.0] — 2026-11-27
 
 ### Added

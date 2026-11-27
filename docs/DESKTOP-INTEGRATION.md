@@ -13,8 +13,7 @@ to a folder with the File System Access API. A desktop shell adds:
 - reliable background processing without a tab;
 - direct filesystem writes without repeated browser permission prompts;
 - OS notifications and launch-at-login;
-- a trusted place to run yt-dlp/FFmpeg with the user's own cookies, if the user
-  opts in.
+- a trusted place to run yt-dlp/FFmpeg locally without a remote server.
 
 It must not reintroduce server paths or cross-user access. The shell is a local
 single-user host, like the existing `server.js`, not a remote administration tool.
@@ -50,7 +49,6 @@ additively:
 ```ts
 export interface HostCapabilities {
   mode: 'cloud' | 'local' | 'desktop';
-  localBrowserCookies: boolean;
   localFolderPicker: boolean;
   serverTagEditing: boolean;
   fileSystemAccess: boolean;
@@ -137,9 +135,8 @@ adapters into the packages.
 - Resolve and containment-check every file path; never accept an absolute path
   from the renderer.
 - Use a temporary file plus atomic rename for saves; clean up on failure.
-- Do not log cookies, session tokens, signed URLs or media titles at info level.
-- If the user enables browser cookies, read them only for YouTube requests and
-  never write them to the job database, logs or exports.
+- Do not log session tokens, signed URLs or media titles at info level.
+- Keep guest-only YouTube access; do not add cookie, password or OAuth capture.
 - Keep the local server bound to loopback. Do not expose it to the LAN.
 - Sign/notarize releases; publish checksums and an update manifest.
 

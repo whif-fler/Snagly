@@ -59,7 +59,7 @@ test('session bootstrap, static assets and security headers', async (t) => {
   const boot = await session.json('/api/session');
   assert.equal(boot.res.status, 200);
   assert.equal(boot.data.capabilities.mode, 'cloud');
-  assert.equal(boot.data.capabilities.localBrowserCookies, false);
+  assert.equal('localBrowserCookies' in boot.data.capabilities, false);
   assert.ok(boot.data.csrfToken.length > 20);
 });
 

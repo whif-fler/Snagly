@@ -9,7 +9,6 @@ const API_VERSION = '1';
 const CAPABILITIES = Object.freeze({
   cloud: Object.freeze({
     mode: 'cloud',
-    localBrowserCookies: false,
     localFolderPicker: false,
     serverTagEditing: true,
     fileSystemAccess: true,
@@ -19,7 +18,6 @@ const CAPABILITIES = Object.freeze({
   }),
   local: Object.freeze({
     mode: 'local',
-    localBrowserCookies: true,
     localFolderPicker: true,
     serverTagEditing: true,
     fileSystemAccess: false,

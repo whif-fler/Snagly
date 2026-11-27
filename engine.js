@@ -23,7 +23,6 @@ const DATA_DIR = process.env.SNAGLY_DATA_DIR
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const STATE_BACKUP = path.join(DATA_DIR, 'state.backup.json');
 const CACHE_DIR = path.join(DATA_DIR, 'cache');
-const COOKIES_FILE = path.join(__dirname, 'cookies.txt');
 const MAX_PROCESS_OUTPUT = 64 * 1024 * 1024;
 const MAX_SSE_CLIENTS = 10;
 const MEDIA_FILE_RE = /\.(mp3|m4a|aac|flac|opus|ogg|oga|wav|webm|mp4|mkv|mov|m4v)$/i;
@@ -86,7 +85,6 @@ const emptyState = () => ({
   manifest: {},
   paused: false,
   workers: 5,
-  useCookies: false,
   format: 'mp3',
   isVideo: false,
   collection: '',
@@ -321,21 +319,6 @@ function saveStateNow() {
   }
 }
 
-function cookieSource() {
-  try {
-    if (fs.existsSync(COOKIES_FILE)) return 'file';
-  } catch {
-    /* ignore */
-  }
-  return tools.browser ? 'browser' : null;
-}
-
-function cookieArgs() {
-  if (!state.useCookies) return [];
-  if (cookieSource() === 'file') return ['--cookies', COOKIES_FILE];
-  return tools.browser ? ['--cookies-from-browser', tools.browser] : [];
-}
-
 function discoverTools() {
   const wingetRoot = path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'WinGet', 'Packages');
   let yt = '';
@@ -366,14 +349,7 @@ function discoverTools() {
     /* handled by status endpoint */
   }
 
-  const browsers = [
-    ['chrome', path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'User Data')],
-    ['edge', path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'Edge', 'User Data')],
-    ['firefox', path.join(os.homedir(), 'AppData', 'Roaming', 'Mozilla', 'Firefox', 'Profiles')]
-  ];
-  const browser = browsers.find(([, p]) => fs.existsSync(p))?.[0] || null;
-
-  tools = { yt, ffmpeg, ffprobe, browser };
+  tools = { yt, ffmpeg, ffprobe };
   return tools;
 }
 
@@ -473,27 +449,15 @@ async function extractPlaylist(url) {
       }
     }
   }
-  // Reading Chrome's cookie database costs several seconds per yt-dlp run,
-  // and most public links do not need it. Try plain first, then sign in.
-  const baseArgs = ['--flat-playlist', '--dump-single-json', '--no-warnings', '--skip-download', url];
-  const extra = cookieArgs();
-  const attempts = extra.length ? [baseArgs, [...baseArgs, ...extra]] : [baseArgs];
-  let r;
-  for (const args of attempts) {
-    r = await runProcess(tools.yt, args, 120000);
-    if (r.code === 0) break;
-  }
+  // Guest-only: Snagly never reads browser cookies or a cookies.txt export.
+  const args = ['--flat-playlist', '--dump-single-json', '--no-warnings', '--skip-download', url];
+  const r = await runProcess(tools.yt, args, 120000);
   if (r.code !== 0) {
     const stderr = String(r.stderr || '').trim();
-    if (/could not copy chrome cookie|cookie database/i.test(stderr)) {
-      return {
-        error:
-          'Browser cookies are locked because the browser is running. Close the browser and try again, or add a cookies.txt file next to server.js.'
-      };
-    }
     if (/sign in to confirm|not a bot/i.test(stderr)) {
       return {
-        error: 'YouTube asked for a sign-in check. Turn on Use YouTube sign-in in the composer and try again.'
+        error:
+          'YouTube asked for a sign-in check. Snagly only downloads public videos, so this one was skipped.'
       };
     }
     return { error: stderr.slice(-600) };
@@ -624,22 +588,8 @@ async function probeFormats(url) {
   const hit = readProbeCache(key);
   if (hit) return hit.data;
 
-  const baseArgs = [
-    '--playlist-items',
-    '1',
-    '--skip-download',
-    '--no-warnings',
-    '--print',
-    '%(formats)j',
-    url
-  ];
-  const extra = cookieArgs();
-  const attempts = extra.length ? [baseArgs, [...baseArgs, ...extra]] : [baseArgs];
-  let r;
-  for (const args of attempts) {
-    r = await runProcess(tools.yt, args, 90000);
-    if (r.code === 0) break;
-  }
+  const args = ['--playlist-items', '1', '--skip-download', '--no-warnings', '--print', '%(formats)j', url];
+  const r = await runProcess(tools.yt, args, 90000);
   if (r.code !== 0) {
     probeCache.set(key, { at: Date.now(), data: null });
     return null;
@@ -956,7 +906,7 @@ function pump() {
   }
 }
 
-function buildArgs(job, track, withCookies) {
+function buildArgs(job, track) {
   const isVideo = Boolean(job.isVideo);
   const fmt = isVideo
     ? VIDEO_FORMATS[job.format || '720p'] || VIDEO_FORMATS['720p']
@@ -980,7 +930,6 @@ function buildArgs(job, track, withCookies) {
     outTemplate,
     `https://www.youtube.com/watch?v=${track.id}`
   ];
-  if (withCookies) args.push(...cookieArgs());
   return { args, isVideo, fmt };
 }
 
@@ -1037,8 +986,6 @@ function trackProgressParser(track) {
 
 function friendlyError(stderr) {
   const text = String(stderr || '').trim();
-  if (/could not copy chrome cookie|cookie database/i.test(text))
-    return 'Browser cookies were locked; try without browser sign-in';
   if (/sign in to confirm|not a bot/i.test(text)) return 'YouTube asked for a sign-in check';
   if (/private video/i.test(text)) return 'Video is private';
   if (/account associated with this video has been terminated/i.test(text)) return 'Uploader account is gone';
@@ -1174,10 +1121,9 @@ async function processTrack(job, track) {
   broadcast();
 
   const isVideo = Boolean(job.isVideo);
-  const useCookies = state.useCookies && Boolean(cookieSource());
   const onStdout = trackProgressParser(track);
-  const built = buildArgs(job, track, useCookies);
-  let result = await runProcess(tools.yt, built.args, 600000, onStdout, track.id);
+  const built = buildArgs(job, track);
+  const result = await runProcess(tools.yt, built.args, 600000, onStdout, track.id);
   noteThrottle(result.stderr);
   if (track.cancelled) {
     markCancelled(track);
@@ -1187,28 +1133,7 @@ async function processTrack(job, track) {
   const fmt = built.fmt;
   const ext = fmt.ext ? `.${fmt.ext}` : '';
   const locate = () => findTrackFile(job.folder, track.index, job.pad || 2, job.single, track.id, ext);
-  let file = locate();
-  if (result.code !== 0 && !file && useCookies) {
-    const cookiesLocked = /could not copy chrome cookie|cookie database/i.test(result.stderr);
-    const retryParser = trackProgressParser(track);
-    const rebuilt = buildArgs(job, track, false);
-    result = await runProcess(tools.yt, rebuilt.args, 600000, retryParser, track.id);
-    noteThrottle(result.stderr);
-    if (track.cancelled) {
-      markCancelled(track);
-      return;
-    }
-    file = locate();
-    if (!track.cookieWarning) {
-      track.cookieWarning = true;
-      emit({
-        type: 'notice',
-        message: cookiesLocked
-          ? 'Browser cookies were locked (is the browser running?). Continuing without sign-in. A cookies.txt file avoids this.'
-          : 'Browser cookies were unavailable. Continuing without browser sign-in.'
-      });
-    }
-  }
+  const file = locate();
 
   // 4K fallback: if 4K requested but unavailable, retry with 1080p
   if (result.code !== 0 && !file && isVideo && job.format === '2160p' && !track.retried4kFallback) {
@@ -1357,12 +1282,6 @@ function setWorkers(n) {
   saveState();
   broadcast();
   pump();
-}
-
-function setUseCookies(value) {
-  state.useCookies = Boolean(value);
-  saveState();
-  broadcast();
 }
 
 function setIsVideo(value) {
@@ -1541,8 +1460,6 @@ function getStatus() {
     isVideo: state.isVideo,
     workers: effectiveWorkers(),
     configuredWorkers: state.workers,
-    useCookies: state.useCookies,
-    cookieSource: cookieSource(),
     paused: state.paused,
     active: activeCount,
     penaltyMs,
@@ -1629,7 +1546,6 @@ module.exports = {
   retryJob,
   setPaused,
   setWorkers,
-  setUseCookies,
   setIsVideo,
   removeJob,
   deleteJobFiles,
@@ -1645,7 +1561,6 @@ module.exports = {
   isLibraryPath,
   prepareRoot,
   dataDir: () => DATA_DIR,
-  cookieSource,
   formats: () => Object.entries(FORMATS).map(([k, v]) => ({ key: k, ...v })),
   videoFormats: () => Object.entries(VIDEO_FORMATS).map(([k, v]) => ({ key: k, ...v })),
   _test: {

@@ -178,11 +178,22 @@
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
           </button>
           <div class="library-menu" id="libraryMenu" role="menu" hidden>
+            <button type="button" role="menuitem" id="selectDownloadsButton">Select downloads</button>
             <button type="button" role="menuitem" id="exportButton">Export history</button>
             <button type="button" role="menuitem" id="clearLibraryButton" class="destructive">Clear library</button>
             <button type="button" role="menuitem" id="deleteAllButton" class="destructive">Delete all downloads</button>
             <button type="button" role="menuitem" id="clearCacheButton" class="destructive">Clear preview cache</button>
           </div>
+        </div>
+      </div>
+      <div class="library-selection" id="librarySelection" hidden>
+        <span class="library-selection-count" id="selectionCount" role="status">0 selected</span>
+        <div class="library-selection-actions">
+          <button class="text-button" id="selectionAllButton" type="button">Select all</button>
+          <button class="text-button" id="selectionClearButton" type="button">Clear</button>
+          <button class="quiet-button danger" id="selectionDeleteFilesButton" type="button" hidden>Delete files</button>
+          <button class="quiet-button danger" id="selectionRemoveButton" type="button">Remove</button>
+          <button class="quiet-button" id="selectionDoneButton" type="button">Done</button>
         </div>
       </div>
       <div class="library-toolbar">

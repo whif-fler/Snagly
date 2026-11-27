@@ -7,7 +7,6 @@ export type TrackStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
 
 export interface Capabilities {
   mode: Mode;
-  localBrowserCookies: boolean;
   localFolderPicker: boolean;
   serverTagEditing: boolean;
   fileSystemAccess: boolean;
@@ -113,7 +112,6 @@ export interface StatusResponse {
   queued: number;
   retentionHours: number;
   capabilities: Capabilities;
-  cookieSource: null;
   tools: { yt: boolean; ffmpeg: boolean };
 }
 

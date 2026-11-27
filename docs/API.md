@@ -53,7 +53,6 @@ need authentication.
 ```json
 {
   "mode": "cloud",
-  "localBrowserCookies": false,
   "localFolderPicker": false,
   "serverTagEditing": true,
   "fileSystemAccess": true,
@@ -95,8 +94,7 @@ Same capability/limit data without creating a session.
 ### `GET /api/status`
 
 Per-user runtime status: `mode`, `apiVersion`, `paused`, `workers`, `active`,
-`queued`, `retentionHours`, `capabilities`, `cookieSource: null`,
-`tools: { yt, ffmpeg }`.
+`queued`, `retentionHours`, `capabilities`, `tools: { yt, ffmpeg }`.
 
 ## Jobs
 
@@ -261,8 +259,8 @@ Body: `{ "paused": true }`. Per-user; pausing stops new tracks for that user onl
 
 ### `POST /api/settings`
 
-Body may contain `isVideo` and/or `paused`. `useCookies` and worker counts are
-ignored in cloud mode. Returns the updated status.
+Body may contain `isVideo` and/or `paused`. Worker counts are ignored in cloud
+mode. Returns the updated status.
 
 ### `POST /api/cache/clear`
 

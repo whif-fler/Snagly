@@ -25,7 +25,7 @@ function splitList(value) {
 
 /**
  * Load runtime configuration. All paths are absolute; all limits are numbers.
- * Cloud mode never enables browser cookies or native folder pickers.
+ * Cloud mode never enables native folder pickers.
  */
 function loadConfig(env = process.env) {
   const mode = env.SNAGLY_MODE === 'local' ? 'local' : 'cloud';
@@ -63,8 +63,6 @@ function loadConfig(env = process.env) {
     mockStepMs: envInt(env.SNAGLY_MOCK_STEP_MS, 25, { min: 0, max: 5000 }),
     ytdlpPath: env.SNAGLY_YTDLP_PATH || env.YTDLP_PATH || '',
     ffmpegPath: env.SNAGLY_FFMPEG_PATH || env.FFMPEG_PATH || '',
-    cookieFile: '',
-    allowCookies: false,
     sessionTtlMs: envInt(env.SNAGLY_SESSION_TTL_DAYS, 30, { min: 1, max: 365 }) * 24 * 60 * 60 * 1000,
     retentionMs: envInt(env.SNAGLY_RETENTION_HOURS, 24, { min: 1, max: 24 * 30 }) * 60 * 60 * 1000,
     cleanupIntervalMs: envInt(env.SNAGLY_CLEANUP_MINUTES, 10, { min: 1, max: 1440 }) * 60 * 1000,

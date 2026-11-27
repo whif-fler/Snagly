@@ -20,7 +20,7 @@ either mode.
 - Everything stays on your computer.
 - Snagly sets no cookies and has no sessions.
 - The only outbound traffic is to YouTube/Google, for links you paste.
-- YouTube sign-in is optional, off by default, and read locally by `yt-dlp`.
+- Snagly is guest-only: it never reads browser cookies or a `cookies.txt` export.
 
 ### Cloud mode
 
@@ -41,8 +41,7 @@ either mode.
 | `data/state.backup.json` | Previous state file                                                             | Recovery after an interrupted write                         |
 | `data/cache/`            | Playlist metadata, format probes and thumbnails                                 | Avoids repeat requests and keeps the browser off Google     |
 | Your save folder         | Downloaded media with embedded tags/art                                         | The output you asked for                                    |
-| Browser `localStorage`   | Theme choice and sign-in prompt answer                                          | UI preferences                                              |
-| `cookies.txt` (optional) | A cookie export you place next to `server.js`                                   | Optional fallback for YouTube sign-in                       |
+| Browser `localStorage`   | Theme and UI preferences                                                        | UI preferences                                              |
 | `%TEMP%`                 | Short-lived files while FFmpeg rewrites tags                                    | Deleted after each write                                    |
 
 `data/` is excluded from Git. On NTFS, Snagly restricts the folder to your Windows
@@ -70,29 +69,23 @@ use it until it expires, so treat those URLs as secrets.
 metadata, and can inspect logs and backups. If you are not the operator, ask them
 how long data is kept and who can access it.
 
-Cloud mode never reads browser cookie stores or `cookies.txt`, and it does not
+Cloud mode never reads personal cookie stores or `cookies.txt`, and it does not
 accept local filesystem paths from the browser.
 
-## Cookies and sign-in
+## Cookies and YouTube access
 
-### Local mode
+Snagly is **guest-only in both modes**. It never reads browser cookie stores or a
+`cookies.txt` export, and it never asks for a Google password or OAuth token. It
+does not use a YouTube account at all.
 
-The **Use YouTube sign-in** toggle controls whether `yt-dlp` may read the YouTube
-cookies already stored in your local Chrome, Edge or Firefox profile. When on:
+Public videos work without an account. Age-restricted, private, members-only and
+bot-checked videos may fail; Snagly reports the failure instead of falling back to
+a signed-in session.
 
-- cookies are read on your computer, only for YouTube requests;
-- they are not written into `data/state.json` or exported history;
-- they are not sent to the developer or any party other than Google.
-
-An optional Netscape-format `cookies.txt` next to `server.js` takes priority and
-is used the same way. It contains credentials; never commit it.
-
-### Cloud mode
-
-Cloud mode does **not** use personal YouTube cookies. It uses only the server's
-own requests. The only cookie Snagly sets is the `snagly_sid` session cookie,
-which is `HttpOnly`, `SameSite=Lax`, and `Secure` when HTTPS is configured. It
-contains a random identifier, not personal information.
+Cloud mode sets only the `snagly_sid` session cookie, which is `HttpOnly`,
+`SameSite=Lax`, and `Secure` when HTTPS is configured. It contains a random
+identifier, not personal information. Local mode sets no cookies and has no
+server-side session.
 
 ## What leaves the device or server
 
@@ -117,8 +110,7 @@ sharing.
 
 - History/settings: close Snagly and delete `data/`.
 - Cache/thumbnails: **Clear cache** or delete `data/cache/`.
-- Media: delete the files in your save folder.
-- `cookies.txt`: delete it next to `server.js`.
+- Media: delete the files in your save folder, or use the library's delete actions.
 - Browser preferences: clear site data for the local address.
 
 ### Cloud mode

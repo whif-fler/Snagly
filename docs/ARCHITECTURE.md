@@ -160,9 +160,9 @@ hand to a download manager, but they should not be logged or shared.
 - Thumbnails come from an allow-list, with redirects disabled and a byte cap.
 - yt-dlp and FFmpeg run without a shell; arguments are arrays, output is capped,
   and process trees are killed on timeout/cancel.
-- The cloud mode never reads `cookies.txt`, browser cookie stores, or arbitrary
-  paths, and returns `403` for the local-only `/api/open`, `/api/browse` and
-  `/api/tags/edit` endpoints.
+- Neither mode reads `cookies.txt` or browser cookie stores. Cloud mode also
+  rejects arbitrary paths and returns `403` for the local-only `/api/open`,
+  `/api/browse` and `/api/tags/edit` endpoints.
 
 ## Failure and recovery
 

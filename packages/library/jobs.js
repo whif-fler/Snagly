@@ -49,7 +49,6 @@ function createJobsService({ db, adapter, files, config, scheduler, signer, tool
       queued: repo.queueDepth(db, userId),
       retentionHours: Math.round(config.retentionMs / 3_600_000),
       capabilities: capabilities(),
-      cookieSource: null,
       tools: {
         yt: Boolean(tools?.yt) || config.engine === 'mock',
         ffmpeg: Boolean(tools?.ffmpeg) || config.engine === 'mock'
@@ -298,7 +297,7 @@ function createJobsService({ db, adapter, files, config, scheduler, signer, tool
   function updateSettings(userId, body) {
     if (body.isVideo !== undefined) repo.setSetting(db, userId, 'isVideo', Boolean(body.isVideo));
     if (body.paused !== undefined) repo.setSetting(db, userId, 'paused', Boolean(body.paused));
-    // useCookies and arbitrary worker counts are intentionally ignored in cloud mode.
+    // Arbitrary worker counts are intentionally ignored in cloud mode.
     if (!getSettings(userId).paused) scheduler?.notify();
     return statusFor(userId);
   }

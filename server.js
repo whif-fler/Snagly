@@ -581,7 +581,6 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/settings') {
     const body = await readBody(req);
     if (body.workers !== undefined) engine.setWorkers(body.workers);
-    if (body.useCookies !== undefined) engine.setUseCookies(Boolean(body.useCookies));
     if (body.isVideo !== undefined) engine.setIsVideo(Boolean(body.isVideo));
     return sendJson(res, 200, engine.getStatus());
   }

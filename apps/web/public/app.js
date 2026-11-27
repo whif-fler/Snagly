@@ -48,7 +48,6 @@ const ui = {
   theme: $('themeButton'),
   hint: $('composerHint'),
   choose: $('chooseButton'),
-  cookieToggle: $('cookieToggle'),
   selectionPanel: $('selectionPanel'),
   selectionSources: $('selectionSources'),
   selectionSummary: $('selectionSummary'),
@@ -62,6 +61,14 @@ const ui = {
   clearLibraryButton: $('clearLibraryButton'),
   deleteAllButton: $('deleteAllButton'),
   clearCacheButton: $('clearCacheButton'),
+  selectDownloadsButton: $('selectDownloadsButton'),
+  librarySelection: $('librarySelection'),
+  selectionCount: $('selectionCount'),
+  selectionAllButton: $('selectionAllButton'),
+  selectionClearButton: $('selectionClearButton'),
+  selectionDeleteFilesButton: $('selectionDeleteFilesButton'),
+  selectionRemoveButton: $('selectionRemoveButton'),
+  selectionDoneButton: $('selectionDoneButton'),
   trackModal: $('trackModal'),
   modalClose: $('modalClose'),
   modalTitle: $('modalTitle'),
@@ -103,9 +110,6 @@ const ui = {
   youtubeStatus: $('youtubeStatus'),
   youtubeHelp: $('youtubeHelp'),
   youtubeNote: $('youtubeNote'),
-  cookieSourceNote: $('cookieSourceNote'),
-  cookieToggleRow: $('cookieToggleRow'),
-  cookieRiskNote: $('cookieRiskNote'),
   duplicatePolicy: $('duplicatePolicy'),
   sessionMode: $('sessionMode'),
   sessionUserRow: $('sessionUserRow'),
@@ -116,7 +120,7 @@ const ui = {
   resetSaved: $('resetSaved')
 };
 
-let status = { workers: 5, useCookies: true, paused: false, root: '', isVideo: false, tools: {} };
+let status = { workers: 5, paused: false, root: '', isVideo: false, tools: {} };
 let jobs = [];
 let previewData = null;
 let previewSeq = 0;
@@ -127,6 +131,8 @@ let sourceAudio = null;
 let rowAnchors = new Map();
 let lastFilmstripSig = '';
 let renderQueued = false;
+let selectionMode = false;
+const selectedJobs = new Set();
 let openModalJobId = null;
 let modalReturnFocus = null;
 let confirmResolve = null;
@@ -140,7 +146,6 @@ let activeSettingsTab = 'general';
 const cloud = {
   mode: 'local',
   capabilities: {
-    localBrowserCookies: true,
     localFolderPicker: true,
     fileSystemAccess: false,
     serverTagEditing: true
@@ -805,33 +810,14 @@ function renderDestination() {
 }
 
 function renderConnection() {
-  const isCloud = cloud.mode === 'cloud';
-  const source = status.cookieSource || (status.tools?.browser ? 'browser' : null);
   const issue = findAuthProblem();
-  let label;
-  let stateClass;
-  if (isCloud) {
-    label = 'YouTube: Guest';
-    stateClass = issue ? 'is-attention' : 'is-off';
-  } else if (!source) {
-    label = 'YouTube: No sign-in';
-    stateClass = 'is-off';
-  } else if (status.useCookies === false) {
-    label = 'YouTube: Sign-in off';
-    stateClass = 'is-off';
-  } else {
-    label = 'YouTube: Signed in';
-    stateClass = issue ? 'is-attention' : 'is-ready';
-  }
-  ui.connectionLabel.textContent = label;
-  ui.connectionButton.className = `connection-pill ${stateClass}`.trim();
-  ui.connectionButton.title = isCloud
-    ? 'Guest access. Open YouTube access details.'
-    : 'Local YouTube sign-in. Open connection details.';
+  ui.connectionLabel.textContent = 'YouTube: Guest';
+  ui.connectionButton.className = `connection-pill ${issue ? 'is-attention' : 'is-off'}`;
+  ui.connectionButton.title = 'Guest access. Open YouTube access details.';
 }
 
 const AUTH_ERROR_RE =
-  /(sign in|signed in|log in|logged in|login|cookies|age[- ]restricted|private video|members[- ]only|confirm you.?re not a bot|bot check|captcha)/i;
+  /(sign in|signed in|log in|logged in|login|age[- ]restricted|private video|members[- ]only|confirm you.?re not a bot|bot check|captcha)/i;
 
 function isAuthError(message) {
   return Boolean(message && AUTH_ERROR_RE.test(String(message)));
@@ -852,17 +838,8 @@ function renderAccessNotice() {
     ui.accessNotice.hidden = true;
     return;
   }
-  if (cloud.mode === 'cloud') {
-    ui.accessNoticeText.textContent =
-      "Guest mode can't open age-restricted, private, members-only or bot-checked videos. Try another public link, or use the local app on your own computer for signed-in downloads.";
-  } else {
-    const source = status.cookieSource || (status.tools?.browser ? 'browser' : null);
-    ui.accessNoticeText.textContent = !source
-      ? 'Add cookies.txt beside server.js, or sign in to YouTube in a browser profile Snagly can read. Then enable YouTube sign-in in Connections.'
-      : status.useCookies === false
-        ? 'Turn on YouTube sign-in in Connections to use the local cookies Snagly found.'
-        : 'The local cookies may have expired. Refresh cookies.txt or sign in to YouTube in your browser again.';
-  }
+  ui.accessNoticeText.textContent =
+    "Guest mode can't open age-restricted, private, members-only or bot-checked videos. Snagly does not use a YouTube sign-in, so try another public link.";
   ui.accessNotice.hidden = false;
 }
 
@@ -874,13 +851,6 @@ function renderSettings() {
     if (status.format && !ui.formatSelect.value) {
       ui.formatSelect.value = status.format;
       ui.formatSelect._syncMenu?.();
-    }
-    const source = status.cookieSource || (status.tools?.browser ? 'browser' : null);
-    if (ui.cookieToggle) {
-      ui.cookieToggle.checked = status.useCookies !== false;
-      ui.cookieToggle.disabled = !source;
-      const row = ui.cookieToggle.closest('.settings-toggle');
-      row?.classList.toggle('is-disabled', !source);
     }
     const toolsMissing = !(status.tools?.yt && status.tools?.ffmpeg);
     ui.hint.textContent = toolsMissing
@@ -895,7 +865,6 @@ function renderSettings() {
 function renderSettingsDialog() {
   const isCloud = cloud.mode === 'cloud';
   const hours = cloud.retentionHours || 24;
-  const source = status.cookieSource || (status.tools?.browser ? 'browser' : null);
   ui.settingsMode.textContent = isCloud ? 'Cloud server · anonymous session' : 'Local app · this computer';
   ui.settingsFootNote.textContent = isCloud
     ? `Server copies expire after ${hours} hours.`
@@ -907,40 +876,20 @@ function renderSettingsDialog() {
   ui.privacyRetentionRow.hidden = !isCloud;
   ui.privacyRetention.textContent = `${hours} hours`;
   ui.privacyMode.textContent = isCloud ? 'On this server' : 'On this computer';
-  ui.privacyCookies.textContent = isCloud ? 'Not collected' : source ? 'Local only' : 'None found';
+  ui.privacyCookies.textContent = 'Not used';
   ui.sessionMode.textContent = isCloud ? 'Cloud · anonymous session' : 'Local app';
   ui.sessionUserRow.hidden = !isCloud;
-  ui.cookieToggleRow.hidden = isCloud;
-  ui.cookieRiskNote.hidden = isCloud;
   ui.deleteAllButton.hidden = isCloud;
   ui.duplicatePolicy.value = duplicatePolicy;
   ui.duplicatePolicy._syncMenu?.();
 
-  if (isCloud) {
-    ui.youtubeStatus.textContent = 'Guest';
-    ui.youtubeStatus.className = 'status-badge guest';
-    ui.youtubeHelp.textContent =
-      'Guest access uses the server’s own requests. No Google account is connected.';
-    ui.youtubeNote.textContent =
-      'Public cloud mode is guest-only. Snagly does not collect or store YouTube cookies here. Age-restricted, private, members-only and bot-checked videos may fail.';
-  } else {
-    const signedIn = source && status.useCookies !== false;
-    ui.youtubeStatus.textContent = source ? (signedIn ? 'Signed in' : 'Sign-in off') : 'Guest';
-    ui.youtubeStatus.className = `status-badge ${source ? (signedIn ? 'ok' : 'warn') : ''}`.trim();
-    ui.youtubeHelp.textContent = source
-      ? 'Local YouTube cookies are available for yt-dlp on this computer.'
-      : 'No local YouTube cookies or cookies.txt file were found.';
-    ui.youtubeNote.textContent =
-      'Snagly does not ask for your Google password and does not use Google OAuth. Local sign-in works by letting yt-dlp read cookies that already exist on this computer. Nothing is uploaded.';
-    ui.cookieToggle.checked = Boolean(source) && status.useCookies !== false;
-    ui.cookieToggle.disabled = !source;
-    ui.cookieSourceNote.textContent =
-      source === 'file'
-        ? 'Using cookies.txt in the Snagly folder.'
-        : source === 'browser'
-          ? `Using YouTube cookies from ${status.tools?.browser || 'this browser'}.`
-          : 'No cookies.txt or browser YouTube cookies were found.';
-  }
+  ui.youtubeStatus.textContent = 'Guest';
+  ui.youtubeStatus.className = 'status-badge guest';
+  ui.youtubeHelp.textContent = isCloud
+    ? 'Guest access uses the server’s own requests. No Google account is connected.'
+    : 'Guest access uses this computer’s own requests. No Google account is connected.';
+  ui.youtubeNote.textContent =
+    'Snagly does not use YouTube cookies, ask for a Google password or use Google OAuth. Age-restricted, private, members-only and bot-checked videos may fail.';
 
   for (const button of document.querySelectorAll('[data-format-choice]')) {
     button.setAttribute(
@@ -1105,6 +1054,18 @@ function tileMetaText(job) {
 }
 
 function renderLibrary() {
+  // Drop selections for jobs that no longer exist, and leave selection mode when
+  // the library empties out.
+  if (selectedJobs.size) {
+    const live = new Set(jobs.map((j) => j.id));
+    for (const id of selectedJobs) if (!live.has(id)) selectedJobs.delete(id);
+  }
+  if (selectionMode && !jobs.length) {
+    selectionMode = false;
+    selectedJobs.clear();
+  }
+  ui.filmstrip.classList.toggle('is-selecting', selectionMode);
+
   const list = filteredJobs();
   const savedSig = list.map((j) => savedTrackCount(j)).join(',');
   const sig =
@@ -1140,6 +1101,7 @@ function renderLibrary() {
             <span class="placeholder" ${job.thumb ? 'hidden' : ''}>${escapeHtml((job.title || '?').charAt(0))}</span>
             <span class="tile-badge" data-badge hidden></span>
             <span class="tile-progress"><span style="width:0%"></span></span>
+            <span class="tile-check" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 8.5 3 3 6-7"/></svg></span>
           </span>
           <span class="tile-title" title="${escapeAttr(job.title)}">${escapeHtml(job.title)}</span>
         </button>
@@ -1203,6 +1165,11 @@ function renderLibrary() {
   for (const job of jobs) {
     const tile = ui.filmstrip.querySelector(`[data-job="${job.id}"]`);
     if (!tile) continue;
+    const isSelected = selectedJobs.has(job.id);
+    tile.classList.toggle('is-selected', isSelected);
+    const tileOpen = tile.querySelector('.tile-open');
+    if (selectionMode) tileOpen.setAttribute('aria-pressed', String(isSelected));
+    else tileOpen.removeAttribute('aria-pressed');
     const partial = job.tracks.reduce(
       (n, t) => n + (t.status === 'done' ? 1 : t.status === 'running' ? (t.progress || 0) / 100 : 0),
       0
@@ -1252,6 +1219,36 @@ function renderLibrary() {
       zipButton.hidden = true;
     }
   }
+  syncSelectionBar();
+}
+
+function syncSelectionBar() {
+  const count = selectedJobs.size;
+  ui.librarySelection.hidden = !selectionMode;
+  ui.selectDownloadsButton.textContent = selectionMode ? 'Exit selection' : 'Select downloads';
+  if (!selectionMode) return;
+  ui.selectionCount.textContent =
+    count === 0 ? 'Select downloads to remove' : `${count} download${count === 1 ? '' : 's'} selected`;
+  const visible = filteredJobs();
+  ui.selectionAllButton.disabled = visible.length === 0;
+  ui.selectionAllButton.textContent = 'Select all';
+  ui.selectionClearButton.disabled = count === 0;
+  ui.selectionRemoveButton.disabled = count === 0;
+  ui.selectionDeleteFilesButton.hidden = cloud.mode === 'cloud';
+  ui.selectionDeleteFilesButton.disabled = count === 0;
+}
+
+function setSelectionMode(on) {
+  selectionMode = on;
+  if (!on) selectedJobs.clear();
+  renderLibrary();
+}
+
+function toggleJobSelection(id) {
+  if (!id) return;
+  if (selectedJobs.has(id)) selectedJobs.delete(id);
+  else selectedJobs.add(id);
+  renderLibrary();
 }
 
 function escapeHtml(value) {
@@ -1366,7 +1363,7 @@ function openTrackModal(jobId) {
             : '';
         const authHint =
           t.error && isAuthError(t.error)
-            ? `<div class="track-warning">Needs a YouTube sign-in check. Open Connections to see the options.</div>`
+            ? `<div class="track-warning">This video needs a YouTube sign-in. Snagly only downloads public videos.</div>`
             : '';
         return `<div class="track-detail" data-track="${escapeAttr(t.id)}">
       <div class="track-name" style="flex:1; min-width:0; position:relative;">
@@ -2339,36 +2336,6 @@ async function postSettings(patch) {
   }
 }
 
-// Ask once per browser profile before the first yt-dlp run that may read the
-// user's YouTube cookies. The choice is stored locally and can be changed in
-// the composer at any time.
-async function maybeAskCookieChoice() {
-  // Cloud mode never reads browser cookies; the prompt would be misleading.
-  if (cloud.mode === 'cloud') return;
-  const source = status?.cookieSource || (status?.tools?.browser ? 'browser' : null);
-  if (!source) return;
-  if (localStorage.getItem('snagly-cookie-choice')) return;
-  const useCookies = await askConfirm({
-    title: 'Use YouTube sign-in?',
-    message:
-      source === 'file'
-        ? 'YouTube sometimes asks for a sign-in check. Snagly found cookies.txt in its folder and can use it only for YouTube requests. The file stays on this computer and is never uploaded. You can change this at any time. See Privacy for details.'
-        : "YouTube sometimes asks for a sign-in check. Snagly can let the local yt-dlp tool read the YouTube cookies already saved in this browser, on this computer. The cookies are used only for YouTube requests — they are never saved in Snagly's history and never sent to the developer. You can change this at any time. See Privacy for details.",
-    confirmLabel: 'Use sign-in',
-    cancelLabel: 'No thanks'
-  });
-  localStorage.setItem('snagly-cookie-choice', '1');
-  await postSettings({ useCookies });
-  if (ui.cookieToggle) ui.cookieToggle.checked = useCookies;
-  renderConnection();
-  renderSettingsDialog();
-  toast(
-    useCookies
-      ? 'YouTube sign-in enabled. Change it any time in the composer.'
-      : 'YouTube sign-in off. Snagly will download without cookies.'
-  );
-}
-
 ui.download.addEventListener('click', startDownload);
 ui.selectionDownload.addEventListener('click', startDownload);
 ui.urls.addEventListener('keydown', (event) => {
@@ -2576,12 +2543,6 @@ ui.theme.addEventListener('click', () => {
   applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
 });
 
-ui.cookieToggle?.addEventListener('change', async () => {
-  await postSettings({ useCookies: ui.cookieToggle.checked });
-  renderConnection();
-  renderSettingsDialog();
-});
-
 ui.pause.addEventListener('click', async () => {
   try {
     await api('/api/pause', { method: 'POST', body: JSON.stringify({ paused: !status.paused }) });
@@ -2597,6 +2558,10 @@ ui.filmstrip.addEventListener('click', async (event) => {
   const id = button.closest('.tile')?.dataset.job;
   const job = jobs.find((j) => j.id === id);
   if (!job) return;
+  if (selectionMode) {
+    toggleJobSelection(id);
+    return;
+  }
   if (button.dataset.action === 'zip') {
     if (jobExpired(job)) {
       toast('That server copy has expired. Download it again to make a new copy.', 'error');
@@ -2639,6 +2604,10 @@ ui.filmstrip.addEventListener('click', (event) => {
   const tile = event.target.closest('.tile');
   if (!tile) return;
   if (event.target.closest('button[data-action]')) return;
+  if (selectionMode) {
+    toggleJobSelection(tile.dataset.job);
+    return;
+  }
   openTrackModal(tile.dataset.job);
 });
 
@@ -2773,6 +2742,88 @@ ui.modalDeleteFiles.addEventListener('click', async () => {
     toast(err.message, 'error');
   }
 });
+
+function selectedJobList() {
+  return jobs.filter((job) => selectedJobs.has(job.id));
+}
+
+async function removeSelectedJobs(withFiles) {
+  if (cloud.mode === 'cloud' && withFiles) return;
+  const targets = selectedJobList();
+  if (!targets.length) return;
+  const eligible = targets.filter((job) => job.status !== 'running' && job.status !== 'queued');
+  const skipped = targets.length - eligible.length;
+  if (!eligible.length) {
+    toast('Active downloads cannot be removed. Cancel them first.', 'error');
+    return;
+  }
+
+  const count = eligible.length;
+  const isCloud = cloud.mode === 'cloud';
+  const fileCount = eligible.reduce((n, job) => n + job.tracks.filter((track) => track.file).length, 0);
+  const keepNote = skipped
+    ? ` ${skipped} active download${skipped === 1 ? ' is' : 's are'} still running and will be kept.`
+    : '';
+  const confirmed = await askConfirm({
+    title: withFiles
+      ? `Delete files from ${count} download${count === 1 ? '' : 's'}?`
+      : `Remove ${count} download${count === 1 ? '' : 's'} from the library?`,
+    message: withFiles
+      ? `This permanently deletes ${fileCount} downloaded file${fileCount === 1 ? '' : 's'} from ${count === 1 ? 'this download' : 'these downloads'} and removes ${count === 1 ? 'it' : 'them'} from the library. Other files in your folders are not touched.${keepNote}`
+      : isCloud
+        ? `This removes ${count === 1 ? 'this download' : 'these downloads'} and ${count === 1 ? 'its server copy' : 'their server copies'}. Files you already saved to this device stay where they are.${keepNote}`
+        : `This removes ${count === 1 ? 'this download' : 'these downloads'} from the library. Downloaded files stay on this computer.${keepNote}`,
+    confirmLabel: withFiles ? 'Delete files' : 'Remove',
+    cancelLabel: 'Keep',
+    danger: true
+  });
+  if (!confirmed) return;
+
+  let removed = 0;
+  let removedFiles = 0;
+  let failed = 0;
+  for (const job of eligible) {
+    try {
+      const result = await api(`/api/jobs/${job.id}${withFiles ? '?files=1' : ''}`, {
+        method: 'DELETE'
+      });
+      removed++;
+      removedFiles += result.removedFiles || 0;
+      selectedJobs.delete(job.id);
+    } catch {
+      failed++;
+    }
+  }
+  await refresh();
+  if (withFiles) {
+    toast(
+      `Deleted ${removedFiles} file${removedFiles === 1 ? '' : 's'} from ${removed} download${
+        removed === 1 ? '' : 's'
+      }.${failed ? ` ${failed} download${failed === 1 ? ' was' : 's were'} kept.` : ''}`,
+      failed ? 'error' : undefined
+    );
+  } else {
+    toast(
+      `Removed ${removed} download${removed === 1 ? '' : 's'}.${
+        failed ? ` ${failed} download${failed === 1 ? ' was' : 's were'} kept.` : ''
+      }`,
+      failed ? 'error' : undefined
+    );
+  }
+}
+
+ui.selectDownloadsButton.addEventListener('click', () => setSelectionMode(!selectionMode));
+ui.selectionDoneButton.addEventListener('click', () => setSelectionMode(false));
+ui.selectionAllButton.addEventListener('click', () => {
+  for (const job of filteredJobs()) selectedJobs.add(job.id);
+  renderLibrary();
+});
+ui.selectionClearButton.addEventListener('click', () => {
+  selectedJobs.clear();
+  renderLibrary();
+});
+ui.selectionRemoveButton.addEventListener('click', () => removeSelectedJobs(false));
+ui.selectionDeleteFilesButton.addEventListener('click', () => removeSelectedJobs(true));
 
 ui.clearLibraryButton.addEventListener('click', async () => {
   if (!jobs.length) {
@@ -3369,6 +3420,12 @@ function initLibraryMenu() {
   });
 }
 
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !selectionMode) return;
+  if (!ui.trackModal.hidden || !ui.settingsModal.hidden || !ui.confirmModal.hidden) return;
+  setSelectionMode(false);
+});
+
 initTheme();
 initSelectMenus();
 initLibraryMenu();
@@ -3379,7 +3436,6 @@ bootstrapped
   .then(() => refresh())
   .then(() => {
     applyMode();
-    maybeAskCookieChoice();
     if (cloud.mode === 'cloud') loadSaveHandle();
     connectEvents();
   });

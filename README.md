@@ -26,16 +26,17 @@ downloads them as MP4 video up to 4K. It keeps the original vanilla HTML/CSS/JS
 interface and now ships in two forms:
 
 - **Local mode** (`node server.js`): the original single-user Windows app. It
-  listens on `127.0.0.1`, writes into a folder you choose, and can optionally use
-  your browser's YouTube sign-in.
+  listens on `127.0.0.1`, writes into a folder you choose, and downloads public
+  videos without a YouTube account.
 - **Cloud mode** (`apps/server`): a secure, self-hosted, multi-user web app. It
   runs in Docker behind Cloudflare Tunnel, stores jobs in SQLite, isolates every
   user's jobs and files, and lets each person save finished files to their own
   device.
 
 Both modes share validation, naming, storage and download logic from `packages/`.
-The cloud app never reads browser cookies, never accepts arbitrary server paths,
-and never exposes one user's files to another.
+Both are guest-only: neither reads browser cookies or a `cookies.txt` export. The
+cloud app also never accepts arbitrary server paths and never exposes one user's
+files to another.
 
 ## Features
 
@@ -242,8 +243,9 @@ network access. Run a manual smoke test against the real engine before a release
 - Users are isolated by user ID in every query and every file path.
 - Delivery URLs are HMAC-signed, scoped to one user/job/track and expire with the
   job. Server filesystem paths never appear in API responses.
-- Browser cookie extraction, native folder pickers, arbitrary server paths and
-  local tag-edit-by-path endpoints are unavailable in cloud mode.
+- YouTube cookie extraction is unavailable in both modes. Native folder pickers,
+  arbitrary server paths and local tag-edit-by-path endpoints are unavailable in
+  cloud mode.
 - Thumbnails are fetched only from an allow-list of YouTube image hosts, without
   redirects, with a size cap.
 - The cloud app stores media on the server for the retention period. The server
@@ -258,8 +260,8 @@ policy is in [`PRIVACY.md`](PRIVACY.md) and in the app at `/privacy`.
   and Safari use individual or ZIP downloads.
 - The cloud app has no accounts or passwords; access is controlled by possession of
   the session cookie. Put it behind Cloudflare Access if you need authentication.
-- YouTube may require sign-in or rate-limit the server's IP. Cloud mode does not
-  use personal cookies; choose a stable host and keep yt-dlp updated.
+- Snagly is guest-only. Age-restricted, private, members-only and bot-checked
+  videos may fail, and YouTube may rate-limit an IP. Keep yt-dlp updated.
 - SQLite and the in-process scheduler are intended for a single app instance. Do
   not scale the service horizontally.
 - Migrations are forward-only. Back up the data volume before upgrading.

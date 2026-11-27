@@ -18,8 +18,9 @@ interfaces.
 - Single-origin deployment. Cloudflare Tunnel terminates public TLS.
 - SQLite for cloud persistence, with versioned migrations.
 - Shared core must not import HTTP, Electron, browser globals or Oracle code.
-- Cloud mode disables browser-cookie extraction, native folder pickers, arbitrary
-  server paths and cross-user access.
+- Both modes stay guest-only: no browser-cookie extraction or `cookies.txt`.
+- Cloud mode also disables native folder pickers, arbitrary server paths and
+  cross-user access.
 - Existing local Windows app must keep working.
 - No destructive migration of the existing `data/` state.
 - No production deployment or credential changes without explicit approval.
@@ -74,7 +75,7 @@ interfaces.
 ### Phase 5 — Browser UI
 
 - [x] Preserve markup, typography, colours, icons and interaction patterns.
-- [x] Capability detection: hide local save/browse/cookie controls.
+- [x] Capability detection: hide local save/browse controls. Both modes are guest-only.
 - [x] Cloud save flow: File System Access API + IndexedDB handles.
 - [x] Standard fallback: individual files and streaming ZIP.
 - [x] Distinguish server completion from local save completion.

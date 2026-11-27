@@ -86,13 +86,8 @@
               </tr>
               <tr>
                 <td>Browser <code>localStorage</code></td>
-                <td>Theme choice and sign-in prompt answer</td>
+                <td>Theme and UI preferences</td>
                 <td>Remembers UI preferences</td>
-              </tr>
-              <tr>
-                <td><code>cookies.txt</code> (optional)</td>
-                <td>A cookie export you place beside <code>server.js</code></td>
-                <td>Optional fallback for YouTube sign-in</td>
               </tr>
             </tbody>
           </table>
@@ -110,11 +105,10 @@
           only connects to this computer. Nothing is sent to the developer.
         </p>
         <p>
-          <strong>YouTube sign-in</strong> is optional and off until you allow it.
-          When enabled, <code>yt-dlp</code> reads YouTube cookies from your local
-          Chrome, Edge or Firefox profile. They are used only for YouTube
-          requests, never written into state or history, and never sent to the
-          developer.
+          <strong>YouTube access is guest-only.</strong> Snagly never reads browser
+          cookies or a <code>cookies.txt</code> export, and it never sends your
+          Google credentials anywhere. Public videos work without an account;
+          age-restricted, private, members-only and bot-checked videos may fail.
         </p>
         <p>
           <strong>Export history</strong> creates a CSV only when you click the
@@ -124,17 +118,17 @@
 
         <h3>Cookies</h3>
         <p>
-          Local mode sets no cookies and has no login session. The sign-in toggle
-          controls <code>yt-dlp</code>'s use of your existing browser cookies; it
-          is not a Snagly session.
+          Local mode sets no cookies and has no login session. Snagly is guest-only,
+          so <code>yt-dlp</code> does not read your browser cookies or a
+          <code>cookies.txt</code> file. Cloud mode uses only the
+          <code>snagly_sid</code> session cookie described below.
         </p>
 
         <h3>Deleting local data</h3>
         <ul>
           <li>Close Snagly and delete <code>data/</code> for history and settings.</li>
           <li>Use <strong>Clear cache</strong> or delete <code>data/cache/</code> for thumbnails.</li>
-          <li>Delete files in your save folder for downloaded media.</li>
-          <li>Delete <code>cookies.txt</code> if you created one.</li>
+          <li>Delete files in your save folder, or use the library's delete actions.</li>
           <li>Clear site data for the local address to remove browser preferences.</li>
         </ul>
 
