@@ -181,9 +181,10 @@ Five tabs, with mode-inapplicable sections removed rather than disabled:
 
 Settings is the only connection-education surface. It traps focus, closes on
 Escape, returns focus to the control that opened it, and scrolls inside the
-dialog on short screens. On phones the five tabs sit in a fixed 3+2 grid so
-every tab stays visible and the selected pill never changes a button's size.
-Global worker/pause controls are not shown to cloud users.
+dialog on short screens. On phones the five tabs sit in a fixed 3+2 grid with
+equal-width buttons and a centred second row, so every tab stays visible and
+the selected pill never changes a button's size. Global worker/pause controls
+are not shown to cloud users.
 
 ### Dialogs, menus and toasts
 
