@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to content</a>
   <div class="ambient" aria-hidden="true"></div>
 
   <header class="topbar">
@@ -21,6 +22,9 @@
         <img class="brand-logo logo-dark" src="/assets/logo-dark.svg" alt="" aria-hidden="true" width="99" height="30">
       </div>
       <div class="topbar-right">
+        <button class="icon-button" id="settingsButton" type="button" aria-label="Settings" title="Settings" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 7h9M18 7h1M5 12h3M12 12h7M5 17h7M16 17h3"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="14" cy="17" r="2"/></svg>
+        </button>
         <button class="icon-button" id="themeButton" type="button" aria-label="Switch appearance" title="Switch appearance">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
         </button>
@@ -28,16 +32,16 @@
     </div>
   </header>
 
-  <main class="page">
+  <main class="page" id="main">
     <section class="hero" aria-labelledby="heroTitle">
       <h1 id="heroTitle">Your music, collected.</h1>
-      <p>Paste a YouTube playlist or a single video. Snagly downloads the audio or video, tags it, and files it away. It can handle several tracks at once.</p>
+      <p id="heroCopy">Paste a YouTube playlist or a single video. Snagly downloads the audio or video, tags it, and files it away. It can handle several tracks at once.</p>
     </section>
 
     <section class="composer" aria-label="Start a download">
       <div class="composer-card">
-        <label class="field-label" for="urls">Links <span>Playlists or single videos</span></label>
-        <textarea id="urls" rows="3" spellcheck="false" placeholder="https://youtube.com/playlist?list=..."></textarea>
+        <label class="field-label" for="urls">Links <span>One per line, playlists or single videos</span></label>
+        <textarea id="urls" rows="3" spellcheck="false" placeholder="https://youtube.com/playlist?list=… or https://youtu.be/…"></textarea>
 
         <div class="mode-quick" role="group" aria-label="Download format">
           <button type="button" class="mode-btn active" id="modeAudio" data-mode="audio" aria-pressed="true">MP3</button>
@@ -45,7 +49,7 @@
         </div>
 
         <div class="quality-section" id="audioQualitySection">
-          <label class="section-label" for="formatSelect">Audio Quality</label>
+          <label class="section-label" for="formatSelect">Audio format</label>
           <select id="formatSelect">
             <option value="mp3">MP3 320 kbps</option>
             <option value="mp3v0">MP3 V0 (VBR)</option>
@@ -58,7 +62,7 @@
         </div>
 
         <div class="quality-section" id="videoQualitySection" hidden>
-          <label class="section-label" for="videoFormatSelect">Video Quality</label>
+          <label class="section-label" for="videoFormatSelect">Video quality</label>
           <select id="videoFormatSelect">
             <option value="2160p">4K MP4 (2160p)</option>
             <option value="1440p">1440p MP4</option>
@@ -73,23 +77,24 @@
 
         <div class="save-row">
           <label for="savePath">Save to</label>
-          <input id="savePath" type="text" spellcheck="false" autocomplete="off">
+          <div class="save-control">
+            <input id="savePath" type="text" spellcheck="false" autocomplete="off" aria-describedby="destinationState">
+            <span class="save-state" id="destinationState" role="status"></span>
+          </div>
           <button class="quiet-button" id="browseButton" type="button">Browse</button>
         </div>
 
         <div class="composer-footer">
           <div class="footer-left">
+            <button class="connection-pill" id="connectionButton" type="button" aria-haspopup="dialog" title="How YouTube access works">
+              <span class="connection-dot" id="connectionDot" aria-hidden="true"></span>
+              <span id="connectionLabel">YouTube: Guest</span>
+              <svg class="connection-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
             <button class="quiet-button disclosure-button" id="chooseButton" type="button" aria-expanded="false" aria-controls="selectionPanel">
               <svg class="disclosure-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <span class="disclosure-label">Choose tracks</span>
             </button>
-            <div class="cookie-toggle-row">
-              <label class="cookie-toggle" title="Uses your YouTube sign-in locally — browser cookies or a cookies.txt file. Nothing is uploaded.">
-                <input type="checkbox" id="cookieToggle">
-                <span>Use YouTube sign-in</span>
-              </label>
-              <a class="privacy-link" href="/privacy" target="_blank" rel="noopener" title="What Snagly stores and sends">Privacy</a>
-            </div>
           </div>
           <div class="composer-actions">
             <button class="primary-button" id="downloadButton" type="button">
@@ -124,7 +129,18 @@
       <p class="composer-hint" id="composerHint">Runs on this computer. Only download audio you have rights to.</p>
     </section>
 
-    <section class="activity" id="activity" hidden aria-label="Download progress">
+    <section class="access-notice" id="accessNotice" hidden aria-labelledby="accessNoticeTitle">
+      <span class="access-notice-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 8v5M12 16.5v.5"/><path d="M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+      </span>
+      <div class="access-notice-copy">
+        <strong id="accessNoticeTitle">YouTube is asking for a sign-in check</strong>
+        <span id="accessNoticeText"></span>
+      </div>
+      <button class="quiet-button" id="accessNoticeButton" type="button">How access works</button>
+    </section>
+
+    <section class="activity" id="activity" hidden aria-label="Download progress" aria-live="polite">
       <div class="activity-card">
         <div class="wave" id="wave" aria-hidden="true"></div>
         <div class="activity-copy">
@@ -133,12 +149,21 @@
             <span class="activity-count" id="activityCount"><span id="activityPercent">0%</span> <span id="activityTotal">of 0</span></span>
           </div>
           <div class="activity-track" id="activityTrack">Preparing</div>
+          <ol class="stage-rail" id="stageRail" aria-label="Download stages">
+            <li data-stage="queued">Queued</li>
+            <li data-stage="fetching">Fetching info</li>
+            <li data-stage="downloading">Downloading</li>
+            <li data-stage="processing">Converting &amp; tagging</li>
+            <li data-stage="ready">Ready</li>
+          </ol>
           <div class="overall-bar"><span id="overallBar"></span></div>
           <div class="activity-meta" id="activityMeta"></div>
           <div class="active-tracks" id="activeTracks"></div>
         </div>
-        <button class="quiet-button" id="pauseButton" type="button">Pause</button>
-        <button class="quiet-button" id="cancelButton" type="button" hidden>Cancel all</button>
+        <div class="activity-actions">
+          <button class="quiet-button" id="pauseButton" type="button">Pause</button>
+          <button class="quiet-button danger" id="cancelButton" type="button" hidden>Cancel all</button>
+        </div>
       </div>
     </section>
 
@@ -154,7 +179,7 @@
           </button>
           <div class="library-menu" id="libraryMenu" role="menu" hidden>
             <button type="button" role="menuitem" id="exportButton">Export history</button>
-            <button type="button" role="menuitem" id="clearCacheButton" class="destructive">Clear cache</button>
+            <button type="button" role="menuitem" id="clearCacheButton" class="destructive">Clear preview cache</button>
           </div>
         </div>
       </div>
@@ -163,13 +188,16 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
           <input type="search" id="librarySearch" placeholder="Search playlists" aria-label="Search library">
         </div>
-        <select id="libraryFilter" aria-label="Filter by status">
+        <select id="libraryFilter" aria-label="Filter library">
           <option value="all">All</option>
-          <option value="done">Downloaded</option>
-          <option value="partial">Partially downloaded</option>
+          <option value="done">Finished</option>
+          <option value="server">On server</option>
+          <option value="saved">Saved to device</option>
+          <option value="expired">Expired</option>
+          <option value="partial">Partially finished</option>
           <option value="failed">Failed</option>
           <option value="cancelled">Cancelled</option>
-          <option value="queued">Queued or running</option>
+          <option value="running">Queued or running</option>
         </select>
         <select id="librarySort" aria-label="Sort by">
           <option value="newest">Newest first</option>
@@ -181,17 +209,24 @@
       <div class="filmstrip" id="filmstrip">
         <div class="empty-state" id="emptyState">
           <img class="empty-icon" src="/assets/icon.svg" alt="">
-          <p>Nothing here yet. Add a playlist or a video above and it will appear here.</p>
+          <div class="empty-copy">
+            <p class="empty-title" id="emptyTitle">Nothing here yet</p>
+            <p class="empty-text" id="emptyText">Paste a playlist or video above. Finished downloads appear here with clear controls for saving them to your device.</p>
+          </div>
+          <button class="quiet-button" id="emptyAction" type="button">Paste a link</button>
         </div>
       </div>
     </section>
 
     <footer class="site-footer">
-      <span>Snagly runs on this computer. Nothing is uploaded.</span>
-      <a href="/privacy" target="_blank" rel="noopener">Privacy &amp; data</a>
+      <span id="footerNote">Snagly runs on this computer. Nothing is uploaded.</span>
+      <div class="footer-links">
+        <button class="text-button" id="footerSettingsButton" type="button">Settings</button>
+        <a href="/privacy" target="_blank" rel="noopener">Privacy &amp; data</a>
+      </div>
     </footer>
 
-  <div class="modal-overlay" id="trackModal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-label="Track details">
+    <div class="modal-overlay" id="trackModal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-label="Track details">
       <div class="modal" aria-labelledby="modalTitle">
         <button class="modal-close" id="modalClose" type="button" aria-label="Close">×</button>
         <div class="modal-head">
@@ -204,6 +239,7 @@
         <div class="modal-body" id="modalBody"></div>
         <div class="modal-footer track-modal-actions">
           <button class="quiet-button" id="modalOpenFolder" type="button">Open folder</button>
+          <button class="quiet-button" id="modalZip" type="button">Download ZIP</button>
           <button class="quiet-button" id="modalYouTube" type="button">Open on YouTube</button>
           <button class="quiet-button" id="modalRetryAll" type="button">Retry failed</button>
           <button class="quiet-button danger" id="modalCancel" type="button" hidden>Cancel download</button>
@@ -211,6 +247,179 @@
         </div>
       </div>
     </div>
+
+    <div class="modal-overlay settings-overlay" id="settingsModal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal settings-modal">
+        <div class="settings-head">
+          <div>
+            <h2 id="settingsTitle">Settings</h2>
+            <p id="settingsMode">Snagly</p>
+          </div>
+          <button class="modal-close" id="settingsClose" type="button" aria-label="Close settings">×</button>
+        </div>
+        <div class="settings-layout">
+          <nav class="settings-nav" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
+            <button type="button" role="tab" id="tab-general" aria-controls="panel-general" aria-selected="true" data-tab="general">General</button>
+            <button type="button" role="tab" id="tab-downloads" aria-controls="panel-downloads" aria-selected="false" data-tab="downloads">Downloads</button>
+            <button type="button" role="tab" id="tab-storage" aria-controls="panel-storage" aria-selected="false" data-tab="storage">Storage</button>
+            <button type="button" role="tab" id="tab-connections" aria-controls="panel-connections" aria-selected="false" data-tab="connections">Connections</button>
+            <button type="button" role="tab" id="tab-privacy" aria-controls="panel-privacy" aria-selected="false" data-tab="privacy">Privacy</button>
+          </nav>
+          <div class="settings-panels">
+            <section class="settings-panel" id="panel-general" role="tabpanel" aria-labelledby="tab-general" data-panel="general">
+              <div class="settings-section">
+                <h3>Appearance</h3>
+                <div class="settings-row">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">Theme</span>
+                    <span class="settings-help">System follows this device's light or dark setting.</span>
+                  </div>
+                  <div class="segmented" id="themeChoices" role="group" aria-label="Theme">
+                    <button type="button" data-theme-choice="light">Light</button>
+                    <button type="button" data-theme-choice="dark">Dark</button>
+                    <button type="button" data-theme-choice="system">System</button>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">Finish notifications</span>
+                    <span class="settings-help">Show a browser notification when a batch finishes in the background.</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="notifyToggle">
+                    <span class="switch-track" aria-hidden="true"></span>
+                    <span class="sr-only">Notify when downloads finish</span>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-panel" id="panel-downloads" role="tabpanel" aria-labelledby="tab-downloads" data-panel="downloads" hidden>
+              <div class="settings-section">
+                <h3>Defaults for new downloads</h3>
+                <div class="settings-row">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">Format</span>
+                    <span class="settings-help">You can change this for each download in the composer.</span>
+                  </div>
+                  <div class="segmented" id="formatChoices" role="group" aria-label="Default format">
+                    <button type="button" data-format-choice="audio">MP3</button>
+                    <button type="button" data-format-choice="video">Video</button>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">Quality</span>
+                    <span class="settings-help">Quality menus adapt to what each source actually offers.</span>
+                  </div>
+                  <span class="settings-value">Set in composer</span>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">Duplicate links</span>
+                    <span class="settings-help">Snagly asks before adding a link that is still in your library.</span>
+                  </div>
+                  <span class="settings-value">Always ask</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-panel" id="panel-storage" role="tabpanel" aria-labelledby="tab-storage" data-panel="storage" hidden>
+              <div class="settings-section" id="cloudStorageSection">
+                <h3>Save finished files</h3>
+                <div class="settings-row settings-row-stack">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">This device</span>
+                    <span class="settings-help" id="settingsDestination">Choose a folder to save finished tracks.</span>
+                  </div>
+                  <div class="settings-actions">
+                    <button class="quiet-button" id="settingsChooseFolder" type="button">Choose folder</button>
+                    <button class="text-button" id="settingsForgetFolder" type="button" hidden>Forget folder</button>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">Save automatically</span>
+                    <span class="settings-help">New finished tracks copy to the chosen folder without another click.</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="autoSaveToggle">
+                    <span class="switch-track" aria-hidden="true"></span>
+                    <span class="sr-only">Save finished tracks automatically</span>
+                  </label>
+                </div>
+                <div class="settings-row" id="retentionRow">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">Server copies</span>
+                    <span class="settings-help" id="settingsRetention">Files stay on the server for a limited time, then expire.</span>
+                  </div>
+                  <span class="settings-value" id="settingsRetentionValue">24 hours</span>
+                </div>
+                <p class="settings-note">Browsers that cannot write to a folder still get ZIP and individual file downloads from the library.</p>
+              </div>
+              <div class="settings-section" id="localStorageSection" hidden>
+                <h3>Files on this computer</h3>
+                <p class="settings-note">The local app writes finished files to the folder in the composer. Use Browse to change it. Nothing is uploaded.</p>
+              </div>
+            </section>
+
+            <section class="settings-panel" id="panel-connections" role="tabpanel" aria-labelledby="tab-connections" data-panel="connections" hidden>
+              <div class="settings-section">
+                <h3>YouTube access</h3>
+                <div class="settings-row">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">Current access</span>
+                    <span class="settings-help" id="youtubeHelp">Guest access uses the server's own requests. No Google account is connected.</span>
+                  </div>
+                  <span class="status-badge" id="youtubeStatus">Guest</span>
+                </div>
+                <label class="settings-toggle" id="cookieToggleRow">
+                  <input type="checkbox" id="cookieToggle">
+                  <span>
+                    <strong>Use YouTube sign-in for local downloads</strong>
+                    <small id="cookieSourceNote">Local only. Nothing is uploaded.</small>
+                  </span>
+                </label>
+                <p class="settings-note" id="youtubeNote">Snagly does not ask for your Google password and does not use Google OAuth. Local sign-in works by letting yt-dlp read cookies that already exist on this computer.</p>
+              </div>
+              <div class="settings-section">
+                <h3>This session</h3>
+                <div class="settings-kv"><span>Mode</span><span id="sessionMode">Local app</span></div>
+                <div class="settings-kv" id="sessionUserRow" hidden><span>Account</span><span>Anonymous session</span></div>
+                <div class="settings-kv"><span>YouTube API</span><span>Not used</span></div>
+              </div>
+              <div class="settings-section">
+                <h3>Desktop app</h3>
+                <p class="settings-note">The planned desktop app will keep the current local sign-in behaviour: cookies stay on your computer and are never uploaded. It is not available yet.</p>
+              </div>
+            </section>
+
+            <section class="settings-panel" id="panel-privacy" role="tabpanel" aria-labelledby="tab-privacy" data-panel="privacy" hidden>
+              <div class="settings-section">
+                <h3>What this app stores</h3>
+                <div class="settings-kv"><span>Processing</span><span id="privacyMode">On this computer</span></div>
+                <div class="settings-kv" id="privacyRetentionRow" hidden><span>Server copies</span><span id="privacyRetention">Expire after 24 hours</span></div>
+                <div class="settings-kv"><span>YouTube cookies</span><span id="privacyCookies">Local only</span></div>
+                <div class="settings-kv"><span>Saved-file markers</span><span>This browser only</span></div>
+              </div>
+              <div class="settings-section">
+                <h3>Controls</h3>
+                <div class="settings-actions settings-actions-start">
+                  <a class="quiet-button link-button" href="/privacy" target="_blank" rel="noopener">Read privacy &amp; data</a>
+                  <button class="text-button" id="resetSaved" type="button">Forget saved-file markers</button>
+                </div>
+                <p class="settings-note">Forgetting markers does not delete files. It only resets the “saved to device” labels in this browser.</p>
+              </div>
+            </section>
+          </div>
+        </div>
+        <div class="settings-foot">
+          <span id="settingsFootNote">Changes save as you make them.</span>
+          <button class="primary-button" id="settingsDone" type="button"><span class="button-label">Done</span></button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-overlay confirm-overlay" id="confirmModal" hidden aria-hidden="true" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
       <div class="modal confirm-modal">
         <div class="confirm-body">

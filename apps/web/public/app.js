@@ -7,6 +7,21 @@ const ui = {
   download: $('downloadButton'),
   savePath: $('savePath'),
   browse: $('browseButton'),
+  saveState: $('destinationState'),
+  heroCopy: $('heroCopy'),
+  footerNote: $('footerNote'),
+  connectionButton: $('connectionButton'),
+  connectionLabel: $('connectionLabel'),
+  connectionDot: $('connectionDot'),
+  stageRail: $('stageRail'),
+  accessNotice: $('accessNotice'),
+  accessNoticeText: $('accessNoticeText'),
+  accessNoticeButton: $('accessNoticeButton'),
+  emptyTitle: $('emptyTitle'),
+  emptyText: $('emptyText'),
+  emptyAction: $('emptyAction'),
+  settingsButton: $('settingsButton'),
+  footerSettingsButton: $('footerSettingsButton'),
 
   formatSelect: $('formatSelect'),
   modeAudio: $('modeAudio'),
@@ -52,6 +67,7 @@ const ui = {
   modalMeta: $('modalMeta'),
   modalBody: $('modalBody'),
   modalOpenFolder: $('modalOpenFolder'),
+  modalZip: $('modalZip'),
   modalYouTube: $('modalYouTube'),
   modalRetryAll: $('modalRetryAll'),
   modalCancel: $('modalCancel'),
@@ -65,7 +81,34 @@ const ui = {
   trackFilter: $('trackFilter'),
   rangeInput: $('rangeInput'),
   applyRange: $('applyRangeButton'),
-  selectionDownload: $('selectionDownloadButton')
+  selectionDownload: $('selectionDownloadButton'),
+  settingsModal: $('settingsModal'),
+  settingsClose: $('settingsClose'),
+  settingsDone: $('settingsDone'),
+  settingsMode: $('settingsMode'),
+  settingsFootNote: $('settingsFootNote'),
+  settingsDestination: $('settingsDestination'),
+  settingsChooseFolder: $('settingsChooseFolder'),
+  settingsForgetFolder: $('settingsForgetFolder'),
+  autoSaveToggle: $('autoSaveToggle'),
+  retentionRow: $('retentionRow'),
+  settingsRetention: $('settingsRetention'),
+  settingsRetentionValue: $('settingsRetentionValue'),
+  cloudStorageSection: $('cloudStorageSection'),
+  localStorageSection: $('localStorageSection'),
+  notifyToggle: $('notifyToggle'),
+  youtubeStatus: $('youtubeStatus'),
+  youtubeHelp: $('youtubeHelp'),
+  youtubeNote: $('youtubeNote'),
+  cookieSourceNote: $('cookieSourceNote'),
+  cookieToggleRow: $('cookieToggleRow'),
+  sessionMode: $('sessionMode'),
+  sessionUserRow: $('sessionUserRow'),
+  privacyMode: $('privacyMode'),
+  privacyRetentionRow: $('privacyRetentionRow'),
+  privacyRetention: $('privacyRetention'),
+  privacyCookies: $('privacyCookies'),
+  resetSaved: $('resetSaved')
 };
 
 let status = { workers: 5, useCookies: true, paused: false, root: '', isVideo: false, tools: {} };
@@ -84,6 +127,8 @@ let modalReturnFocus = null;
 let confirmResolve = null;
 let confirmReturnFocus = null;
 let confirmPreviousOverflow = '';
+let settingsReturnFocus = null;
+let activeSettingsTab = 'general';
 
 // Cloud mode is detected from /api/session. The legacy local server does not
 // expose it, so every branch below falls back to the original local behaviour.
@@ -107,6 +152,25 @@ const saveState = {
   saved: new Set(),
   saving: new Set()
 };
+
+const AUTO_SAVE_KEY = 'snagly-autosave';
+const NOTIFY_KEY = 'snagly-notify';
+let autoSaveEnabled = readLocal(AUTO_SAVE_KEY) !== '0';
+let notifyEnabled = readLocal(NOTIFY_KEY) !== '0';
+
+function readLocal(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocal(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
 
 const SAVED_PREFIX = 'snagly-saved:';
 
@@ -137,7 +201,8 @@ function markSaved(trackId, value = true) {
   }
 }
 
-const supportsDirectoryPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+const supportsDirectoryPicker =
+  typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
 
 const bootstrapped = bootstrap();
 
@@ -188,6 +253,7 @@ function maybeNotifyFinished() {
     hadActiveJobs &&
     !active &&
     document.hidden &&
+    notifyEnabled &&
     'Notification' in window &&
     Notification.permission === 'granted'
   ) {
@@ -200,7 +266,7 @@ function maybeNotifyFinished() {
   hadActiveJobs = active;
 }
 
-function toast(message, kind = 'info') {
+function toast(message, kind = 'info', duration = 4200) {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
   el.textContent = message;
@@ -209,10 +275,32 @@ function toast(message, kind = 'info') {
     el.style.opacity = '0';
     el.style.transition = 'opacity .25s ease';
     setTimeout(() => el.remove(), 260);
-  }, 4200);
+  }, duration);
 }
 
-function api(path, options = {}) {
+let sessionRenewal = null;
+let sessionExpiredNoticeShown = false;
+
+function renewSession() {
+  if (!sessionRenewal) {
+    sessionRenewal = bootstrap()
+      .then(() => {
+        if (sessionExpiredNoticeShown) return;
+        sessionExpiredNoticeShown = true;
+        toast(
+          'Your session expired. Snagly started a new anonymous session. Files saved to your device are still there.',
+          'error',
+          9000
+        );
+      })
+      .finally(() => {
+        sessionRenewal = null;
+      });
+  }
+  return sessionRenewal;
+}
+
+function api(path, options = {}, retried = false) {
   const method = String(options.method || 'GET').toUpperCase();
   const headers = { ...(options.headers || {}) };
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
@@ -224,9 +312,9 @@ function api(path, options = {}) {
     credentials: 'same-origin',
     headers
   }).then(async (res) => {
-    if (res.status === 401 && cloud.mode === 'cloud') {
-      await bootstrap();
-      return api(path, options);
+    if (res.status === 401 && cloud.mode === 'cloud' && !retried) {
+      await renewSession();
+      return api(path, options, true);
     }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
@@ -234,18 +322,34 @@ function api(path, options = {}) {
   });
 }
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('reel-theme', theme);
+function applyTheme(choice = 'system') {
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const resolved = choice === 'system' ? (systemDark ? 'dark' : 'light') : choice;
+  document.documentElement.setAttribute('data-theme', resolved);
+  document.documentElement.dataset.themeChoice = choice;
+  writeLocal('reel-theme', choice);
   document
     .querySelector('meta[name="theme-color"]')
-    .setAttribute('content', theme === 'dark' ? '#1C1C1E' : '#F5F5F7');
+    .setAttribute('content', resolved === 'dark' ? '#1C1C1E' : '#F5F5F7');
+  renderThemeChoices();
+}
+
+function renderThemeChoices() {
+  const choice = document.documentElement.dataset.themeChoice || readLocal('reel-theme') || 'system';
+  for (const button of document.querySelectorAll('[data-theme-choice]')) {
+    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === choice));
+  }
 }
 
 function initTheme() {
-  const saved = localStorage.getItem('reel-theme');
-  const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  applyTheme(saved || (systemDark ? 'dark' : 'light'));
+  const saved = readLocal('reel-theme');
+  applyTheme(saved || 'system');
+  const query = window.matchMedia('(prefers-color-scheme: dark)');
+  const onChange = () => {
+    if ((readLocal('reel-theme') || 'system') === 'system') applyTheme('system');
+  };
+  if (query.addEventListener) query.addEventListener('change', onChange);
+  else if (query.addListener) query.addListener(onChange);
 }
 
 function buildWave() {
@@ -297,6 +401,18 @@ async function idbSet(key, value) {
   } catch {}
 }
 
+async function idbDelete(key) {
+  try {
+    const db = await openHandleDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('handles', 'readwrite');
+      tx.objectStore('handles').delete(key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
 function safeLocalName(value, fallback = 'track') {
   const cleaned = String(value || '')
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
@@ -329,14 +445,43 @@ async function loadSaveHandle() {
   if (!saveState.needsPermission) autoSave();
 }
 
+function jobExpired(job) {
+  if (!job) return false;
+  if (job.expired) return true;
+  return Boolean(job.expiresAt && new Date(job.expiresAt).getTime() <= Date.now());
+}
+
+function expiryText(job) {
+  if (!job?.expiresAt) return '';
+  const ms = new Date(job.expiresAt).getTime() - Date.now();
+  if (ms <= 0) return 'expired';
+  const hours = Math.ceil(ms / 3600000);
+  return hours >= 2 ? `expires in ${hours} hours` : 'expires within an hour';
+}
+
+function savedTrackCount(job) {
+  return (job?.tracks || []).filter((t) => t.status === 'done' && isSaved(t.id)).length;
+}
+
+function pendingSaveCount() {
+  let count = 0;
+  for (const job of jobs) {
+    if (jobExpired(job)) continue;
+    count += job.tracks.filter((t) => t.status === 'done' && !isSaved(t.id)).length;
+  }
+  return count;
+}
+
 async function chooseSaveDir() {
   if (!supportsDirectoryPicker) {
-    toast('Your browser cannot save to a folder. Use the ZIP or individual file downloads.', 'error');
+    toast('This browser cannot write to a folder. Use Download ZIP from the library.', 'error');
     return;
   }
   try {
     const handle = await window.showDirectoryPicker({ id: 'snagly-saves', mode: 'readwrite' });
     if (!(await directoryPermission(handle, true))) {
+      saveState.needsPermission = true;
+      renderCloudSave();
       toast('Folder permission was not granted.', 'error');
       return;
     }
@@ -352,8 +497,14 @@ async function chooseSaveDir() {
   }
 }
 
-async function saveTrack(job, track, { force = false } = {}) {
+async function saveTrack(job, track, { force = false, batch = false } = {}) {
   if (!track?.downloadUrl && !track?.id) return false;
+  if (jobExpired(job)) {
+    if (!batch) {
+      toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+    }
+    return false;
+  }
   if (!isSaved(track.id) || force) {
     if (saveState.saving.has(track.id)) return false;
     if (!saveState.handle) {
@@ -361,7 +512,9 @@ async function saveTrack(job, track, { force = false } = {}) {
       if (!saveState.handle) return false;
     }
     if (!(await directoryPermission(saveState.handle, true))) {
-      toast('Folder permission is needed to save downloads.', 'error');
+      saveState.needsPermission = true;
+      renderCloudSave();
+      if (!batch) toast(`Reconnect ${saveState.name || 'the folder'} to save downloads.`, 'error');
       return false;
     }
     saveState.saving.add(track.id);
@@ -381,12 +534,22 @@ async function saveTrack(job, track, { force = false } = {}) {
         credentials: 'same-origin',
         cache: 'no-store'
       });
-      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      if (!res.ok) {
+        throw Object.assign(
+          new Error(
+            res.status === 404 || res.status === 410
+              ? 'The server copy expired.'
+              : `Download failed (${res.status}).`
+          ),
+          { status: res.status }
+        );
+      }
       writable = await fileHandle.createWritable();
       if (res.body?.pipeTo) await res.body.pipeTo(writable);
       else await writable.write(await res.arrayBuffer());
       writable = null;
       markSaved(track.id);
+      saveState.needsPermission = false;
       return true;
     } catch (err) {
       if (writable) {
@@ -394,7 +557,24 @@ async function saveTrack(job, track, { force = false } = {}) {
           await writable.abort();
         } catch {}
       }
-      toast(`Could not save ${track.title}: ${err.message}`, 'error');
+      if (err?.name === 'NotAllowedError') {
+        saveState.needsPermission = true;
+        renderCloudSave();
+        if (!batch) {
+          toast(
+            `Folder access expired for ${saveState.name || 'the selected folder'}. Reconnect it in Storage.`,
+            'error'
+          );
+        }
+      } else if (err?.name === 'NotFoundError') {
+        saveState.handle = null;
+        saveState.name = '';
+        saveState.needsPermission = false;
+        renderCloudSave();
+        if (!batch) toast('That folder is no longer available. Choose a folder again.', 'error');
+      } else if (!batch) {
+        toast(`Could not save ${track.title}: ${err.message}`, 'error');
+      }
       return false;
     } finally {
       saveState.saving.delete(track.id);
@@ -405,6 +585,15 @@ async function saveTrack(job, track, { force = false } = {}) {
 
 async function saveJob(job, { force = false } = {}) {
   if (!job) return;
+  if (jobExpired(job)) {
+    toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+    return;
+  }
+  const done = job.tracks.filter((t) => t.status === 'done');
+  if (!done.length) {
+    toast('Nothing has finished downloading yet.');
+    return;
+  }
   if (!saveState.handle) {
     await chooseSaveDir();
     if (!saveState.handle) {
@@ -412,113 +601,374 @@ async function saveJob(job, { force = false } = {}) {
       return;
     }
   }
-  const done = job.tracks.filter((t) => t.status === 'done');
-  if (!done.length) {
-    toast('Nothing finished yet.');
-    return;
-  }
   let saved = 0;
+  let failed = 0;
   for (const track of done) {
-    if (await saveTrack(job, track, { force })) saved++;
+    const wasSaved = isSaved(track.id);
+    if (await saveTrack(job, track, { force, batch: true })) {
+      if (force || !wasSaved) saved++;
+    } else {
+      failed++;
+    }
   }
   if (saved) toast(`Saved ${saved} file${saved === 1 ? '' : 's'} to ${saveState.name}.`);
+  else if (failed) {
+    toast(
+      saveState.needsPermission
+        ? `Reconnect ${saveState.name || 'the folder'} to save downloads.`
+        : `Could not save those files to ${saveState.name}. Check the folder and try again.`,
+      'error'
+    );
+  } else if (done.length) {
+    toast(`Those files are already saved to ${saveState.name}.`);
+  }
   lastFilmstripSig = '';
   renderLibrary();
+  renderCloudSave();
 }
 
 // Cloud fallback for browsers without the File System Access API: hand the
 // signed archive or track URL to the normal download manager.
-function downloadOrSaveJob(job) {
+function downloadOrSaveJob(job, { force = false } = {}) {
   if (!job) return;
-  if (supportsDirectoryPicker) return saveJob(job);
+  if (jobExpired(job)) {
+    toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+    return;
+  }
+  if (supportsDirectoryPicker) return saveJob(job, { force });
   if (job.archiveUrl) window.location.assign(job.archiveUrl);
   else toast('Nothing is ready to download yet.', 'error');
 }
 
+// An expired job cannot be saved or zipped. Re-submitting its original link is
+// the only recovery path, so make that a first-class action instead of a dead
+// end. The replacement reuses the same track selection and output format, and
+// the expired entry is removed once the new copy exists.
+async function renewExpiredJob(job) {
+  const url = job?.sourceUrl || job?.url;
+  if (!job || !url) {
+    toast('Could not find the original link for that playlist.', 'error');
+    return;
+  }
+  const indexes = (job.tracks || []).map((track) => track.index).filter(Number.isInteger);
+  const payload = {
+    items: [{ url, selected: indexes.length ? indexes : null }],
+    format: job.format,
+    isVideo: Boolean(job.isVideo)
+  };
+  if (cloud.mode !== 'cloud') payload.root = ui.savePath.value.trim();
+  setDownloadBusy(true);
+  setDownloadLabel('Starting a new copy…');
+  try {
+    const result = await submitJobs(payload);
+    if (!result.created?.length) {
+      const reason = result.errors?.[0]?.error;
+      toast(reason || 'Could not start a new copy of that playlist.', 'error');
+      return;
+    }
+    closeTrackModal();
+    try {
+      await api(`/api/jobs/${job.id}`, { method: 'DELETE' });
+    } catch {}
+    await refresh();
+    toast(`Started a new copy of “${job.title}”. The expired entry was removed.`);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    setDownloadBusy(false);
+    updateDownloadButton();
+  }
+}
+
 async function downloadOrSaveTrack(job, track) {
   if (!job || !track) return;
+  if (jobExpired(job)) {
+    toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+    return;
+  }
   if (supportsDirectoryPicker) return saveTrack(job, track, { force: true });
   if (track.downloadUrl) window.location.assign(track.downloadUrl);
   else toast('That file is not available.', 'error');
 }
 
 let autoSaveTimer = null;
+let autoSaveRunning = false;
 function autoSave() {
-  if (cloud.mode !== 'cloud' || !saveState.handle || saveState.needsPermission) return;
-  clearTimeout(autoSaveTimer);
+  if (cloud.mode !== 'cloud' || !autoSaveEnabled) return;
+  if (!saveState.handle || saveState.needsPermission) return;
+  if (autoSaveTimer || autoSaveRunning) return;
   autoSaveTimer = setTimeout(async () => {
-    if (!(await directoryPermission(saveState.handle, false))) return;
-    let budget = 4;
-    for (const job of jobs) {
-      if (budget <= 0) break;
-      if (job.status !== 'done' && job.status !== 'partial') continue;
-      if (job.expired) continue;
-      for (const track of job.tracks) {
-        if (track.status !== 'done' || isSaved(track.id)) continue;
-        if (budget-- <= 0) break;
-        await saveTrack(job, track);
+    autoSaveTimer = null;
+    autoSaveRunning = true;
+    try {
+      if (!(await directoryPermission(saveState.handle, false))) {
+        saveState.needsPermission = true;
+        renderCloudSave();
+        return;
+      }
+      let budget = 6;
+      for (const job of jobs) {
+        if (budget <= 0) break;
+        if (job.status !== 'done' && job.status !== 'partial') continue;
+        if (jobExpired(job)) continue;
+        for (const track of job.tracks) {
+          if (track.status !== 'done' || isSaved(track.id)) continue;
+          if (budget-- <= 0) break;
+          await saveTrack(job, track);
+        }
+      }
+    } finally {
+      autoSaveRunning = false;
+      if (cloud.mode === 'cloud') {
+        lastFilmstripSig = '';
+        renderLibrary();
+        renderCloudSave();
       }
     }
-    if (cloud.mode === 'cloud') {
-      lastFilmstripSig = '';
-      renderLibrary();
-    }
-  }, 350);
+  }, 600);
 }
 
 function renderCloudSave() {
   if (cloud.mode !== 'cloud') return;
-  const saveRow = document.querySelector('.save-row');
-  const cookieRow = document.querySelector('.cookie-toggle-row');
-  const footer = document.querySelector('.site-footer span');
-  const hero = document.querySelector('.hero p');
-  if (cookieRow) cookieRow.hidden = true;
-  if (hero)
-    hero.textContent =
-      'Paste a YouTube playlist or a single video. The server downloads and tags it, then you can save the finished files straight into a folder on this device.';
-  if (footer)
-    footer.textContent = `Files are processed on this server and kept for ${cloud.retentionHours || 24} hours unless you save them.`;
-  ui.hint.textContent = `Processed on this server. Save finished files to your device — server copies expire after ${cloud.retentionHours || 24} hours. Only download media you have rights to.`;
-  if (saveRow) {
-    saveRow.hidden = !supportsDirectoryPicker;
-    if (supportsDirectoryPicker) {
-      ui.savePath.readOnly = true;
-      ui.savePath.value = saveState.name || '';
-      ui.savePath.placeholder = 'Choose a folder (or use Downloads)';
-      ui.browse.textContent = saveState.name ? 'Change folder' : 'Choose folder';
+  const hours = cloud.retentionHours || 24;
+  if (ui.heroCopy)
+    ui.heroCopy.textContent =
+      'Paste a playlist or a video. This server downloads it, tags it, and gets it ready to save to your device.';
+  if (ui.footerNote)
+    ui.footerNote.textContent = `Anonymous session. Server copies expire after ${hours} hours.`;
+  ui.hint.textContent = `Server copies expire after ${hours} hours. Save the files you want to keep. Only download media you have rights to.`;
+  ui.hint.classList.remove('is-warning');
+  ui.savePath.readOnly = true;
+  ui.savePath.placeholder = 'Choose a folder';
+  ui.browse.hidden = !supportsDirectoryPicker;
+  ui.browse.textContent = saveState.name ? 'Change' : 'Choose folder';
+  renderDestination();
+}
+
+function destinationState() {
+  const pending = pendingSaveCount();
+  const pendingText = pending ? `${pending} finished track${pending === 1 ? '' : 's'} ready to save.` : '';
+  if (!supportsDirectoryPicker) {
+    return {
+      value: 'Downloads folder',
+      text: "This browser can't write to a folder. Use Download ZIP from a finished playlist.",
+      kind: 'is-warning'
+    };
+  }
+  if (!saveState.handle) {
+    return {
+      value: saveState.name || '',
+      text: pendingText || 'Finished tracks stay on the server until you choose a folder.',
+      kind: pending ? 'is-warning' : ''
+    };
+  }
+  if (saveState.needsPermission) {
+    return {
+      value: saveState.name,
+      text: `Folder access expired for “${saveState.name}”. Reconnect to keep saving.`,
+      kind: 'is-warning'
+    };
+  }
+  if (!autoSaveEnabled) {
+    return {
+      value: saveState.name,
+      text: pendingText || `All finished files are saved to “${saveState.name}”.`,
+      kind: pending ? '' : 'is-ok'
+    };
+  }
+  return {
+    value: saveState.name,
+    text: pendingText || `Auto-save is on. New finished tracks go to “${saveState.name}”.`,
+    kind: 'is-ok'
+  };
+}
+
+function renderDestination() {
+  if (cloud.mode !== 'cloud') return;
+  const state = destinationState();
+  ui.savePath.value = state.value;
+  ui.saveState.textContent = state.text;
+  ui.saveState.className = `save-state ${state.kind}`.trim();
+  ui.settingsDestination.textContent = state.text;
+  ui.settingsChooseFolder.textContent = saveState.name ? 'Change folder' : 'Choose folder';
+  ui.settingsChooseFolder.disabled = !supportsDirectoryPicker;
+  ui.settingsForgetFolder.hidden = !saveState.handle;
+  ui.autoSaveToggle.checked = autoSaveEnabled;
+  ui.autoSaveToggle.disabled = !supportsDirectoryPicker;
+}
+
+function renderConnection() {
+  const isCloud = cloud.mode === 'cloud';
+  const source = status.cookieSource || (status.tools?.browser ? 'browser' : null);
+  const issue = findAuthProblem();
+  let label;
+  let stateClass;
+  if (isCloud) {
+    label = 'YouTube: Guest';
+    stateClass = issue ? 'is-attention' : 'is-off';
+  } else if (!source) {
+    label = 'YouTube: No sign-in';
+    stateClass = 'is-off';
+  } else if (status.useCookies === false) {
+    label = 'YouTube: Sign-in off';
+    stateClass = 'is-off';
+  } else {
+    label = 'YouTube: Signed in';
+    stateClass = issue ? 'is-attention' : 'is-ready';
+  }
+  ui.connectionLabel.textContent = label;
+  ui.connectionButton.className = `connection-pill ${stateClass}`.trim();
+  ui.connectionButton.title = isCloud
+    ? 'Guest access. Open YouTube access details.'
+    : 'Local YouTube sign-in. Open connection details.';
+}
+
+const AUTH_ERROR_RE =
+  /(sign in|signed in|log in|logged in|login|cookies|age[- ]restricted|private video|members[- ]only|confirm you.?re not a bot|bot check|captcha)/i;
+
+function isAuthError(message) {
+  return Boolean(message && AUTH_ERROR_RE.test(String(message)));
+}
+
+function findAuthProblem() {
+  for (const job of jobs) {
+    for (const track of job.tracks) {
+      if (track.error && isAuthError(track.error)) return track.error;
     }
   }
+  return null;
+}
+
+function renderAccessNotice() {
+  const problem = findAuthProblem();
+  if (!problem) {
+    ui.accessNotice.hidden = true;
+    return;
+  }
+  if (cloud.mode === 'cloud') {
+    ui.accessNoticeText.textContent =
+      "Guest mode can't open age-restricted, private, members-only or bot-checked videos. Try another public link, or use the local app on your own computer for signed-in downloads.";
+  } else {
+    const source = status.cookieSource || (status.tools?.browser ? 'browser' : null);
+    ui.accessNoticeText.textContent = !source
+      ? 'Add cookies.txt beside server.js, or sign in to YouTube in a browser profile Snagly can read. Then enable YouTube sign-in in Connections.'
+      : status.useCookies === false
+        ? 'Turn on YouTube sign-in in Connections to use the local cookies Snagly found.'
+        : 'The local cookies may have expired. Refresh cookies.txt or sign in to YouTube in your browser again.';
+  }
+  ui.accessNotice.hidden = false;
 }
 
 function renderSettings() {
   if (cloud.mode === 'cloud') {
     renderCloudSave();
-    return;
-  }
-  if (!ui.savePath.value) ui.savePath.value = status.root || '';
-  if (status.format && !ui.formatSelect.value) {
-    ui.formatSelect.value = status.format;
-    ui.formatSelect._syncMenu?.();
-  }
-  if (ui.cookieToggle) {
-    const source = status.cookieSource || (status.tools?.browser ? 'browser' : null);
-    ui.cookieToggle.checked = status.useCookies !== false;
-    ui.cookieToggle.disabled = !source;
-    const row = ui.cookieToggle.closest('.cookie-toggle');
-    row?.classList.toggle('disabled', !source);
-    if (row) {
-      row.title =
-        source === 'file'
-          ? 'Uses the cookies.txt file in the Snagly folder. Nothing is uploaded.'
-          : source === 'browser'
-            ? "Uses this browser's YouTube cookies locally. Nothing is uploaded."
-            : 'No YouTube sign-in source was found.';
+  } else {
+    if (!ui.savePath.value) ui.savePath.value = status.root || '';
+    if (status.format && !ui.formatSelect.value) {
+      ui.formatSelect.value = status.format;
+      ui.formatSelect._syncMenu?.();
     }
+    const source = status.cookieSource || (status.tools?.browser ? 'browser' : null);
+    if (ui.cookieToggle) {
+      ui.cookieToggle.checked = status.useCookies !== false;
+      ui.cookieToggle.disabled = !source;
+      const row = ui.cookieToggle.closest('.settings-toggle');
+      row?.classList.toggle('is-disabled', !source);
+    }
+    const toolsMissing = !(status.tools?.yt && status.tools?.ffmpeg);
+    ui.hint.textContent = toolsMissing
+      ? 'Downloader tools were not found. Check the README for setup.'
+      : 'Runs on this computer — nothing is uploaded. Only download audio you have rights to.';
+    ui.hint.classList.toggle('is-warning', toolsMissing);
   }
-  ui.hint.textContent =
-    status.tools?.yt && status.tools?.ffmpeg
-      ? 'Runs on this computer — nothing is uploaded. Only download audio you have rights to.'
-      : 'Downloader tools were not found. Check the README for setup.';
+  renderConnection();
+  renderSettingsDialog();
+}
+
+function renderSettingsDialog() {
+  const isCloud = cloud.mode === 'cloud';
+  const hours = cloud.retentionHours || 24;
+  const source = status.cookieSource || (status.tools?.browser ? 'browser' : null);
+  ui.settingsMode.textContent = isCloud ? 'Cloud server · anonymous session' : 'Local app · this computer';
+  ui.settingsFootNote.textContent = isCloud
+    ? `Server copies expire after ${hours} hours.`
+    : 'Local files stay on this computer.';
+  ui.cloudStorageSection.hidden = !isCloud;
+  ui.localStorageSection.hidden = isCloud;
+  ui.retentionRow.hidden = !isCloud;
+  ui.settingsRetentionValue.textContent = `${hours} hours`;
+  ui.privacyRetentionRow.hidden = !isCloud;
+  ui.privacyRetention.textContent = `${hours} hours`;
+  ui.privacyMode.textContent = isCloud ? 'On this server' : 'On this computer';
+  ui.privacyCookies.textContent = isCloud ? 'Not collected' : source ? 'Local only' : 'None found';
+  ui.sessionMode.textContent = isCloud ? 'Cloud · anonymous session' : 'Local app';
+  ui.sessionUserRow.hidden = !isCloud;
+  ui.cookieToggleRow.hidden = isCloud;
+
+  if (isCloud) {
+    ui.youtubeStatus.textContent = 'Guest';
+    ui.youtubeStatus.className = 'status-badge guest';
+    ui.youtubeHelp.textContent =
+      'Guest access uses the server’s own requests. No Google account is connected.';
+    ui.youtubeNote.textContent =
+      'Public cloud mode is guest-only. Snagly does not collect or store YouTube cookies here. Age-restricted, private, members-only and bot-checked videos may fail.';
+  } else {
+    const signedIn = source && status.useCookies !== false;
+    ui.youtubeStatus.textContent = source ? (signedIn ? 'Signed in' : 'Sign-in off') : 'Guest';
+    ui.youtubeStatus.className = `status-badge ${source ? (signedIn ? 'ok' : 'warn') : ''}`.trim();
+    ui.youtubeHelp.textContent = source
+      ? 'Local YouTube cookies are available for yt-dlp on this computer.'
+      : 'No local YouTube cookies or cookies.txt file were found.';
+    ui.youtubeNote.textContent =
+      'Snagly does not ask for your Google password and does not use Google OAuth. Local sign-in works by letting yt-dlp read cookies that already exist on this computer. Nothing is uploaded.';
+    ui.cookieToggle.checked = Boolean(source) && status.useCookies !== false;
+    ui.cookieToggle.disabled = !source;
+    ui.cookieSourceNote.textContent =
+      source === 'file'
+        ? 'Using cookies.txt in the Snagly folder.'
+        : source === 'browser'
+          ? `Using YouTube cookies from ${status.tools?.browser || 'this browser'}.`
+          : 'No cookies.txt or browser YouTube cookies were found.';
+  }
+
+  for (const button of document.querySelectorAll('[data-format-choice]')) {
+    button.setAttribute(
+      'aria-pressed',
+      String((button.dataset.formatChoice === 'video') === Boolean(status.isVideo))
+    );
+  }
+  for (const option of ui.libraryFilter.options) {
+    if (['server', 'saved', 'expired'].includes(option.value)) option.hidden = !isCloud;
+  }
+  ui.libraryFilter._syncMenu?.();
+  renderThemeChoices();
+  renderNotifyToggle();
+  renderDestination();
+}
+
+function renderNotifyToggle() {
+  if (!ui.notifyToggle) return;
+  const supported = 'Notification' in window;
+  ui.notifyToggle.disabled = !supported;
+  ui.notifyToggle.checked = supported && notifyEnabled && Notification.permission === 'granted';
+}
+
+function phaseLabel(track) {
+  if (track?.phase === 'processing') return 'Converting & tagging';
+  if (track?.phase === 'preparing') return 'Fetching info';
+  return 'Downloading';
+}
+
+function renderStages(stage) {
+  const order = ['queued', 'fetching', 'downloading', 'processing', 'ready'];
+  const index = Math.max(0, order.indexOf(stage));
+  for (const item of ui.stageRail.children) {
+    const i = order.indexOf(item.dataset.stage);
+    item.classList.toggle('done', i < index);
+    item.classList.toggle('current', i === index);
+    if (i === index) item.setAttribute('aria-current', 'step');
+    else item.removeAttribute('aria-current');
+  }
 }
 
 function renderActivity() {
@@ -533,24 +983,36 @@ function renderActivity() {
   const done = active.reduce((n, j) => n + j.done, 0);
   const failed = active.reduce((n, j) => n + j.failed, 0);
   const runningTrack = active.flatMap((j) => j.tracks).find((t) => t.status === 'running');
+  const allTracks = active.flatMap((j) => j.tracks);
 
   ui.activityTitle.textContent = active.length === 1 ? active[0].title : `${active.length} playlists`;
-  ui.activityTrack.textContent = runningTrack
-    ? `#${String(runningTrack.index).padStart(2, '0')} ${runningTrack.title}`
-    : 'Preparing next track';
+  ui.activityTrack.textContent = status.paused
+    ? 'Paused. Finished tracks are still available.'
+    : runningTrack
+      ? `#${String(runningTrack.index).padStart(2, '0')} ${runningTrack.title} · ${phaseLabel(runningTrack)}`
+      : done && done === total
+        ? 'Ready to save to your device'
+        : 'Waiting for the next track';
 
-  const allTracks = active.flatMap((j) => j.tracks);
   const partial = allTracks.reduce((n, t) => n + (t.status === 'done' ? 1 : (t.progress || 0) / 100), 0);
   const overall = total ? Math.min(100, Math.round((partial / total) * 100)) : 0;
   ui.activityPercent.textContent = `${overall}%`;
   ui.activityTotal.textContent = `(${done} of ${total})`;
   ui.overallBar.style.width = `${overall}%`;
 
-  const bits = [`${overall}%`];
-  if (status.active) bits.push(`${status.active} working`);
+  let stage = 'queued';
+  if (done === total && total > 0) stage = 'ready';
+  else if (runningTrack?.phase === 'processing') stage = 'processing';
+  else if (runningTrack?.phase === 'preparing') stage = 'fetching';
+  else if (runningTrack) stage = 'downloading';
+  renderStages(stage);
+
+  const bits = [];
+  if (status.active) bits.push(`${status.active} downloading now`);
   if (failed) bits.push(`<span class="warn">${failed} failed</span>`);
-  if (status.penaltyMs) bits.push('slowed to avoid throttling');
-  ui.activityMeta.innerHTML = bits.join(', ');
+  if (status.penaltyMs) bits.push('Slowed to avoid throttling');
+  if (status.paused) bits.push('Paused');
+  ui.activityMeta.innerHTML = bits.join(' · ');
 
   const bars = ui.wave.children;
   const filled = Math.round((overall / 100) * bars.length);
@@ -562,8 +1024,6 @@ function renderActivity() {
   const activeTracks = allTracks.filter((t) => t.status === 'running').slice(0, 6);
   ui.activeTracks.innerHTML = activeTracks
     .map((t) => {
-      const phase =
-        t.phase === 'processing' ? 'Tagging' : t.phase === 'preparing' ? 'Starting' : 'Downloading';
       const stats = [
         `${t.progress || 0}%`,
         t.speed && t.phase !== 'processing' ? t.speed : '',
@@ -573,7 +1033,7 @@ function renderActivity() {
         .join(', ');
       return `<div class="active-row">
       <span class="active-name">#${escapeHtml(String(t.index).padStart(2, '0'))} ${escapeHtml(t.title)}</span>
-      <span class="active-stats">${escapeHtml(phase)}, ${escapeHtml(stats)}</span>
+      <span class="active-stats">${escapeHtml(phaseLabel(t))}${stats ? `, ${escapeHtml(stats)}` : ''}</span>
       <span class="active-bar"><span style="width:${t.progress || 0}%"></span></span>
     </div>`;
     })
@@ -584,13 +1044,64 @@ function renderActivity() {
   ui.cancelButton.hidden = !hasActive;
 }
 
+function deliveryState(job) {
+  const doneTracks = job.tracks.filter((t) => t.status === 'done');
+  const saved = doneTracks.filter((t) => isSaved(t.id)).length;
+  if (job.status === 'running' || job.status === 'queued') {
+    return { badge: 'Downloading', badgeClass: 'running', saved, doneTracks };
+  }
+  if (jobExpired(job)) return { badge: 'Expired', badgeClass: 'expired', saved, doneTracks };
+  if (cloud.mode === 'cloud') {
+    if (doneTracks.length && saved === doneTracks.length) {
+      return { badge: 'Saved to device', badgeClass: 'saved', saved, doneTracks };
+    }
+    if (saved)
+      return { badge: `Saved ${saved}/${doneTracks.length}`, badgeClass: 'saved', saved, doneTracks };
+    if (doneTracks.length) return { badge: 'On server', badgeClass: '', saved, doneTracks };
+    if (job.failed) return { badge: 'Failed', badgeClass: 'expired', saved, doneTracks };
+    if (job.cancelled) return { badge: 'Cancelled', badgeClass: '', saved, doneTracks };
+    return { badge: 'Queued', badgeClass: '', saved, doneTracks };
+  }
+  if (job.status === 'done') return { badge: 'Downloaded', badgeClass: 'saved', saved, doneTracks };
+  if (job.failed) return { badge: 'Failed', badgeClass: 'expired', saved, doneTracks };
+  if (job.cancelled) return { badge: 'Cancelled', badgeClass: '', saved, doneTracks };
+  return { badge: 'Partial', badgeClass: '', saved, doneTracks };
+}
+
+function tileMetaText(job) {
+  const saved = savedTrackCount(job);
+  if (job.status === 'running' || job.status === 'queued') {
+    const partial = job.tracks.reduce(
+      (n, t) => n + (t.status === 'done' ? 1 : t.status === 'running' ? (t.progress || 0) / 100 : 0),
+      0
+    );
+    const pct = job.trackCount ? Math.min(100, Math.round((partial / job.trackCount) * 100)) : 0;
+    return `${pct}% downloaded, ${job.done} of ${job.trackCount} ready`;
+  }
+  if (jobExpired(job)) {
+    return `Server copy expired. Download again to make a new copy.`;
+  }
+  if (cloud.mode === 'cloud') {
+    if (saved) {
+      return `${job.trackCount} track${job.trackCount === 1 ? '' : 's'}, ${saved} saved to this device`;
+    }
+    const expiry = expiryText(job);
+    return `${job.trackCount} track${job.trackCount === 1 ? '' : 's'}, ready on server${expiry ? `, ${expiry}` : ''}`;
+  }
+  if (job.failed) return `${job.done} of ${job.trackCount} tracks ready, ${job.failed} failed`;
+  if (job.cancelled) return `${job.done} of ${job.trackCount} tracks ready, ${job.cancelled} cancelled`;
+  return `${job.trackCount} track${job.trackCount === 1 ? '' : 's'} downloaded`;
+}
+
 function renderLibrary() {
   const list = filteredJobs();
-  const savedSig = list
-    .map((j) => j.tracks.filter((t) => t.status === 'done' && isSaved(t.id)).length)
-    .join(',');
+  const savedSig = list.map((j) => savedTrackCount(j)).join(',');
   const sig =
-    list.map((j) => [j.id, j.title, j.thumb, j.trackCount, j.status].join('~')).join(';') +
+    list
+      .map((j) =>
+        [j.id, j.title, j.thumb, j.trackCount, j.status, j.done, j.expiresAt, jobExpired(j)].join('~')
+      )
+      .join(';') +
     '|' +
     ui.librarySearch.value +
     '|' +
@@ -598,7 +1109,9 @@ function renderLibrary() {
     '|' +
     ui.librarySort.value +
     '|' +
-    savedSig;
+    savedSig +
+    '|' +
+    cloud.mode;
   if (sig !== lastFilmstripSig) {
     lastFilmstripSig = sig;
     ui.filmstrip.querySelectorAll('.tile').forEach((el) => el.remove());
@@ -614,6 +1127,7 @@ function renderLibrary() {
           <span class="tile-art" aria-hidden="true">
             ${job.thumb ? `<img class="thumb-img" src="${escapeAttr(thumbSrc(job.thumb))}" alt="" loading="lazy">` : ''}
             <span class="placeholder" ${job.thumb ? 'hidden' : ''}>${escapeHtml((job.title || '?').charAt(0))}</span>
+            <span class="tile-badge" data-badge hidden></span>
             <span class="tile-progress"><span style="width:0%"></span></span>
           </span>
           <span class="tile-title" title="${escapeAttr(job.title)}">${escapeHtml(job.title)}</span>
@@ -622,6 +1136,7 @@ function renderLibrary() {
           <div class="tile-meta"><span class="status-dot"></span><span class="tile-count"></span></div>
           <div class="tile-actions">
             <button type="button" data-action="open">Open folder</button>
+            <button type="button" data-action="zip" hidden>Download ZIP</button>
             <button type="button" data-action="retry" hidden>Retry failed</button>
           </div>
         </div>`;
@@ -631,10 +1146,49 @@ function renderLibrary() {
 
   const allDone = jobs.reduce((n, j) => n + j.done, 0);
   const allTracks = jobs.reduce((n, j) => n + j.trackCount, 0);
+  const allSaved = jobs.reduce((n, j) => n + savedTrackCount(j), 0);
   ui.librarySummary.textContent = jobs.length
-    ? `${jobs.length} playlist${jobs.length === 1 ? '' : 's'}, ${allDone} of ${allTracks} tracks`
+    ? `${jobs.length} playlist${jobs.length === 1 ? '' : 's'}, ${allDone} of ${allTracks} tracks${
+        cloud.mode === 'cloud' && allSaved ? `, ${allSaved} saved to this device` : ''
+      }`
     : '';
 
+  if (!list.length) {
+    const filter = ui.libraryFilter.value;
+    const searching = Boolean(ui.librarySearch.value.trim());
+    const filtering = searching || filter !== 'all';
+    if (filtering) {
+      const copy = {
+        saved: [
+          'Nothing saved yet',
+          'Choose a folder in the composer, then use Save on a finished playlist. Saved files stay on your device.'
+        ],
+        expired: [
+          'No expired copies',
+          'Server copies are removed after the retention window. Save the files you want to keep.'
+        ],
+        server: [
+          'Nothing waiting on the server',
+          'Start a download, then save the finished tracks before the server copy expires.'
+        ],
+        running: ['Nothing is downloading', 'Queued and active downloads appear here as they run.'],
+        failed: ['No failed downloads', 'Failed tracks appear here with a retry action.'],
+        cancelled: ['No cancelled downloads', 'Cancelled jobs appear here if you need to retry them.']
+      };
+      const entry = searching && filter === 'all' ? null : copy[filter];
+      ui.emptyTitle.textContent = entry?.[0] || 'No matching playlists';
+      ui.emptyText.textContent =
+        entry?.[1] || 'Try a different search, or clear the filter to see everything in this session.';
+      ui.emptyAction.textContent = 'Clear filters';
+    } else {
+      ui.emptyTitle.textContent = 'Nothing here yet';
+      ui.emptyText.textContent =
+        cloud.mode === 'cloud'
+          ? 'Paste a playlist or video above. Finished downloads appear here, ready to save to your device.'
+          : 'Paste a playlist or video above. Finished downloads appear here with their folder location.';
+      ui.emptyAction.textContent = 'Paste a link';
+    }
+  }
   for (const job of jobs) {
     const tile = ui.filmstrip.querySelector(`[data-job="${job.id}"]`);
     if (!tile) continue;
@@ -644,34 +1198,47 @@ function renderLibrary() {
     );
     const pct = job.trackCount ? Math.min(100, Math.round((partial / job.trackCount) * 100)) : 0;
     tile.querySelector('.tile-progress span').style.width = `${pct}%`;
+    const state = deliveryState(job);
+    const expired = jobExpired(job);
     const dot = tile.querySelector('.status-dot');
-    dot.className = `status-dot ${job.status}`;
-    tile.querySelector('.tile-count').textContent =
-      `${pct}% (${job.done}/${job.trackCount}${job.failed ? `, ${job.failed} failed` : ''}${job.cancelled ? `, ${job.cancelled} cancelled` : ''}${job.missing ? `, ${job.missing} missing` : ''})`;
+    dot.className = `status-dot ${expired ? 'expired' : job.status}`;
+    tile.querySelector('.tile-count').textContent = tileMetaText(job);
+    const badge = tile.querySelector('[data-badge]');
+    badge.textContent = state.badge;
+    badge.className = `tile-badge ${state.badgeClass}`.trim();
+    badge.hidden = false;
+
     const retryButton = tile.querySelector('[data-action="retry"]');
     const retryable = (job.failed || 0) + (job.cancelled || 0) + (job.missing || 0);
-    retryButton.hidden = retryable === 0;
+    retryButton.hidden = retryable === 0 || expired;
     retryButton.textContent = job.failed || job.cancelled ? 'Retry failed' : 'Re-download missing';
 
     const openButton = tile.querySelector('[data-action="open"]');
+    const zipButton = tile.querySelector('[data-action="zip"]');
     if (cloud.mode === 'cloud') {
-      const doneTracks = job.tracks.filter((t) => t.status === 'done');
-      const saved = doneTracks.filter((t) => isSaved(t.id)).length;
-      if (supportsDirectoryPicker) {
-        openButton.textContent =
-          doneTracks.length && saved === doneTracks.length
-            ? 'Saved'
-            : saved
-              ? `Save (${saved}/${doneTracks.length})`
-              : 'Save to folder';
-        openButton.disabled = doneTracks.length === 0 || saved === doneTracks.length;
+      const doneTracks = state.doneTracks;
+      const saved = state.saved;
+      if (expired) {
+        openButton.textContent = 'Download again';
+        openButton.disabled = false;
+      } else if (supportsDirectoryPicker) {
+        const allSaved = doneTracks.length > 0 && saved === doneTracks.length;
+        openButton.textContent = allSaved
+          ? 'Save again'
+          : saved
+            ? `Save ${doneTracks.length - saved} more`
+            : `Save ${doneTracks.length || ''} file${doneTracks.length === 1 ? '' : 's'}`.trim();
+        openButton.disabled = doneTracks.length === 0;
       } else {
         openButton.textContent = 'Download ZIP';
         openButton.disabled = !job.archiveUrl;
       }
-      if ((job.done || 0) > 0) {
-        tile.querySelector('.tile-count').textContent += `, ${saved}/${job.done} saved`;
-      }
+      zipButton.hidden = !supportsDirectoryPicker || !job.archiveUrl || expired;
+      zipButton.disabled = !job.archiveUrl || expired;
+    } else {
+      openButton.textContent = 'Open folder';
+      openButton.disabled = false;
+      zipButton.hidden = true;
     }
   }
 }
@@ -697,7 +1264,11 @@ function filteredJobs() {
   const q = ui.librarySearch.value.trim().toLowerCase();
   const f = ui.libraryFilter.value;
   if (q) list = list.filter((j) => j.title.toLowerCase().includes(q));
-  if (f !== 'all') list = list.filter((j) => j.status === f);
+  if (f === 'server') list = list.filter((j) => !jobExpired(j) && j.done > 0);
+  else if (f === 'saved') list = list.filter((j) => savedTrackCount(j) > 0);
+  else if (f === 'expired') list = list.filter((j) => jobExpired(j));
+  else if (f === 'running') list = list.filter((j) => j.status === 'running' || j.status === 'queued');
+  else if (f !== 'all') list = list.filter((j) => j.status === f);
   const s = ui.librarySort.value;
   list.sort((a, b) => {
     if (s === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
@@ -715,69 +1286,109 @@ function openTrackModal(jobId) {
   openModalJobId = jobId;
   ui.modalTitle.textContent = job.title;
   const thumb = job.thumb
-    ? `<img class="thumb-img" src="${escapeAttr(thumbSrc(job.thumb))}" alt="" loading="lazy">`
-    : `<div class="placeholder" style="width:100%;height:100%;display:grid;place-items:center;font-size:42px;color:var(--faint);font-weight:600">${escapeHtml((job.title || '?').charAt(0))}</div>`;
+    ? `<span class="modal-art-fallback" aria-hidden="true">${escapeHtml((job.title || '?').charAt(0))}</span><img class="thumb-img" src="${escapeAttr(thumbSrc(job.thumb))}" alt="" loading="lazy">`
+    : `<span class="modal-art-fallback" aria-hidden="true">${escapeHtml((job.title || '?').charAt(0))}</span>`;
   ui.modalArt.innerHTML = thumb;
+  const artImage = ui.modalArt.querySelector('img');
+  if (artImage) {
+    artImage.addEventListener('error', () => artImage.remove(), { once: true });
+  }
   const done = job.tracks.filter((t) => t.status === 'done').length;
   const failed = job.tracks.filter((t) => t.status === 'failed').length;
   const cancelled = job.tracks.filter((t) => t.status === 'cancelled').length;
   const missing = job.tracks.filter((t) => t.status === 'missing').length;
+  const saved = job.tracks.filter((t) => t.status === 'done' && isSaved(t.id)).length;
+  const expired = jobExpired(job);
   ui.modalMeta.innerHTML = `
     <span>${job.trackCount} ${job.isVideo ? 'video' : 'track'}${job.trackCount === 1 ? '' : 's'}</span>
-    <span style="color:#34C759">${done} done</span>
+    <span style="color:var(--success)">${done} ready</span>
+    ${cloud.mode === 'cloud' && saved ? `<span style="color:var(--success)">${saved} on this device</span>` : ''}
     ${failed ? `<span style="color:var(--danger)">${failed} failed</span>` : ''}
     ${cancelled ? `<span style="color:var(--muted)">${cancelled} cancelled</span>` : ''}
     ${missing ? `<span style="color:var(--danger)">${missing} missing</span>` : ''}
+    ${expired ? `<span style="color:var(--danger)">Server copy expired</span>` : cloud.mode === 'cloud' && expiryText(job) ? `<span>${escapeHtml(expiryText(job))}</span>` : ''}
     <span>${job.single ? 'Single video' : 'Playlist'}</span>
   `;
-  ui.modalBody.innerHTML = job.tracks
-    .map((t) => {
-      const pct = t.status === 'done' ? 100 : t.progress || 0;
-      const statusLabel =
-        t.status === 'done'
-          ? 'Done'
-          : t.status === 'failed'
-            ? 'Failed'
-            : t.status === 'cancelled'
-              ? 'Cancelled'
-              : t.status === 'missing'
-                ? 'Missing'
-                : t.status === 'running'
-                  ? 'Downloading'
-                  : 'Queued';
-      const baseActions =
-        t.status === 'done'
-          ? `<button class="text-button" data-action="open-file" data-track="${escapeAttr(t.id)}">${cloud.mode === 'cloud' ? 'Save file' : 'Open file'}</button>`
-          : t.status === 'failed' || t.status === 'cancelled' || t.status === 'missing'
-            ? `<button class="text-button" data-action="retry-track" data-track="${escapeAttr(t.id)}">Retry</button>`
+  const notice = expired
+    ? `<div class="modal-notice" role="note">
+         <strong>The server copy has expired.</strong>
+         <span>${
+           saved
+             ? 'The files you saved stay on your device. Download again to make a fresh copy for saving or ZIP downloads.'
+             : 'Download again to make a new copy you can save to your device.'
+         }</span>
+       </div>`
+    : '';
+  ui.modalBody.innerHTML =
+    notice +
+    job.tracks
+      .map((t) => {
+        const pct = t.status === 'done' ? 100 : t.progress || 0;
+        const trackSaved = isSaved(t.id);
+        const statusLabel =
+          t.status === 'done'
+            ? cloud.mode === 'cloud' && trackSaved
+              ? 'Saved'
+              : 'Ready'
+            : t.status === 'failed'
+              ? 'Failed'
+              : t.status === 'cancelled'
+                ? 'Cancelled'
+                : t.status === 'missing'
+                  ? 'Missing'
+                  : t.status === 'running'
+                    ? phaseLabel(t)
+                    : 'Queued';
+        const baseActions =
+          t.status === 'done' && !expired
+            ? `<button class="text-button" data-action="open-file" data-track="${escapeAttr(t.id)}">${cloud.mode === 'cloud' ? (trackSaved ? 'Save again' : 'Save file') : 'Open file'}</button>`
+            : t.status === 'failed' || t.status === 'cancelled' || t.status === 'missing'
+              ? `<button class="text-button" data-action="retry-track" data-track="${escapeAttr(t.id)}">Retry</button>`
+              : '';
+        const editBtn =
+          t.status === 'done' && !expired
+            ? `<button class="text-button" data-action="edit-tags" data-track="${escapeAttr(t.id)}">Edit tags</button>`
             : '';
-      const editBtn =
-        t.status === 'done'
-          ? `<button class="text-button" data-action="edit-tags" data-track="${escapeAttr(t.id)}">Edit tags</button>`
-          : '';
-      return `<div class="track-detail" data-track="${escapeAttr(t.id)}">
+        const delivery =
+          cloud.mode === 'cloud' && t.status === 'done'
+            ? `<span class="track-delivery ${trackSaved ? 'is-saved' : ''}">${trackSaved ? 'Saved to this device' : 'On server'}</span>`
+            : '';
+        const authHint =
+          t.error && isAuthError(t.error)
+            ? `<div class="track-warning">Needs a YouTube sign-in check. Open Connections to see the options.</div>`
+            : '';
+        return `<div class="track-detail" data-track="${escapeAttr(t.id)}">
       <div class="track-name" style="flex:1; min-width:0; position:relative;">
         <div style="font-weight:600" data-field="title">${escapeHtml(t.title)}</div>
         <div style="font-size:11px;color:var(--faint)" data-field="artist">${escapeHtml(t.artist)}, #${String(t.index).padStart(2, '0')}</div>
+        ${delivery}
         <input type="text" data-edit="title" value="${escapeAttr(t.title)}" hidden style="width:100%;font-size:13px;font-weight:600;border:1px solid var(--hairline);border-radius:4px;padding:2px 6px;background:var(--surface)">
         <input type="text" data-edit="artist" value="${escapeAttr(t.artist)}" hidden style="width:100%;font-size:11px;color:var(--faint);border:1px solid var(--hairline);border-radius:4px;padding:1px 6px;background:var(--surface);margin-top:2px">
       </div>
-      <div class="track-status">${statusLabel}</div>
+      <div class="track-status">${statusLabel}${t.status === 'running' ? ` ${pct}%` : ''}</div>
       <div class="track-bar"><span style="width:${pct}%"></span></div>
       ${t.error ? `<div class="track-error">${escapeHtml(t.error)}</div>` : ''}
+      ${authHint}
       ${t.warning ? `<div class="track-warning">${escapeHtml(t.warning)}</div>` : ''}
       <div class="track-actions">${baseActions}${editBtn}
         <button class="text-button" data-action="save-tags" data-track="${escapeAttr(t.id)}" hidden>Save</button>
         <button class="text-button" data-action="cancel-edit" data-track="${escapeAttr(t.id)}" hidden>Cancel</button>
       </div>
     </div>`;
-    })
-    .join('');
+      })
+      .join('');
   ui.modalOpenFolder.dataset.job = jobId;
+  ui.modalZip.dataset.job = jobId;
+  ui.modalZip.hidden = true;
   if (cloud.mode === 'cloud') {
-    if (supportsDirectoryPicker) {
-      ui.modalOpenFolder.textContent = 'Save to folder';
+    if (expired) {
+      ui.modalOpenFolder.textContent = 'Download again';
+      ui.modalOpenFolder.hidden = false;
+    } else if (supportsDirectoryPicker) {
+      ui.modalOpenFolder.textContent =
+        saved && saved === done ? 'Save again to folder' : 'Save all to folder';
       ui.modalOpenFolder.hidden = done === 0;
+      ui.modalZip.hidden = !job.archiveUrl;
     } else {
       ui.modalOpenFolder.textContent = 'Download ZIP';
       ui.modalOpenFolder.hidden = !job.archiveUrl;
@@ -787,6 +1398,7 @@ function openTrackModal(jobId) {
     ui.modalOpenFolder.hidden = false;
   }
   ui.modalRetryAll.dataset.job = jobId;
+  ui.modalRetryAll.hidden = failed + cancelled + missing === 0;
   ui.modalRemove.dataset.job = jobId;
   const isActive = job.status === 'running' || job.status === 'queued';
   ui.modalCancel.hidden = !isActive;
@@ -845,6 +1457,192 @@ ui.confirmModal.addEventListener('click', (event) => {
   if (event.target === ui.confirmModal) settleConfirm(false);
 });
 
+/* ---- Settings and connection controls ---- */
+for (const button of [ui.settingsButton, ui.footerSettingsButton]) {
+  button?.addEventListener('click', () => openSettings('general'));
+}
+ui.connectionButton.addEventListener('click', () => openSettings('connections'));
+ui.accessNoticeButton.addEventListener('click', () => openSettings('connections'));
+ui.settingsClose.addEventListener('click', closeSettings);
+ui.settingsDone.addEventListener('click', closeSettings);
+ui.settingsModal.addEventListener('click', (event) => {
+  if (event.target === ui.settingsModal) closeSettings();
+});
+
+for (const tab of settingsTabs()) {
+  tab.tabIndex = tab.getAttribute('aria-selected') === 'true' ? 0 : -1;
+  tab.addEventListener('click', () => setSettingsTab(tab.dataset.tab));
+}
+ui.settingsModal.querySelector('.settings-nav').addEventListener('keydown', (event) => {
+  const tabs = settingsTabs();
+  const index = tabs.indexOf(document.activeElement);
+  if (index < 0) return;
+  let next = null;
+  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+  else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft')
+    next = (index - 1 + tabs.length) % tabs.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = tabs.length - 1;
+  if (next === null) return;
+  event.preventDefault();
+  setSettingsTab(tabs[next].dataset.tab, { focus: true });
+});
+
+for (const button of document.querySelectorAll('[data-theme-choice]')) {
+  button.addEventListener('click', () => applyTheme(button.dataset.themeChoice));
+}
+for (const button of document.querySelectorAll('[data-format-choice]')) {
+  button.addEventListener('click', () => {
+    setMode(button.dataset.formatChoice === 'video');
+    renderSettingsDialog();
+  });
+}
+
+ui.notifyToggle?.addEventListener('change', async () => {
+  if (!('Notification' in window)) return;
+  if (ui.notifyToggle.checked) {
+    const permission = await Notification.requestPermission().catch(() => 'denied');
+    notifyEnabled = permission === 'granted';
+    writeLocal(NOTIFY_KEY, notifyEnabled ? '1' : '0');
+    if (!notifyEnabled)
+      toast('Notifications are blocked in this browser. Allow them in site settings.', 'error');
+  } else {
+    notifyEnabled = false;
+    writeLocal(NOTIFY_KEY, '0');
+  }
+  renderNotifyToggle();
+});
+
+ui.autoSaveToggle.addEventListener('change', () => {
+  autoSaveEnabled = ui.autoSaveToggle.checked;
+  writeLocal(AUTO_SAVE_KEY, autoSaveEnabled ? '1' : '0');
+  renderCloudSave();
+  if (autoSaveEnabled) autoSave();
+});
+
+ui.settingsChooseFolder.addEventListener('click', async () => {
+  await chooseSaveDir();
+  renderSettingsDialog();
+});
+
+ui.settingsForgetFolder.addEventListener('click', async () => {
+  const confirmed = await askConfirm({
+    title: 'Forget this folder?',
+    message:
+      'Snagly will stop saving to this folder. Files already saved to your device are not affected. Finished tracks stay on the server until you choose a folder again.',
+    confirmLabel: 'Forget folder',
+    cancelLabel: 'Keep',
+    danger: true
+  });
+  if (!confirmed) return;
+  saveState.handle = null;
+  saveState.name = '';
+  saveState.needsPermission = false;
+  await idbDelete('save-dir');
+  renderCloudSave();
+  renderSettingsDialog();
+  toast('Folder forgotten. Choose a folder whenever you want to save again.');
+});
+
+ui.resetSaved.addEventListener('click', async () => {
+  const confirmed = await askConfirm({
+    title: 'Forget saved-file markers?',
+    message:
+      'This only clears the “saved to device” labels in this browser. Files already on your device are not deleted.',
+    confirmLabel: 'Forget markers',
+    cancelLabel: 'Cancel'
+  });
+  if (!confirmed) return;
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(SAVED_PREFIX)) localStorage.removeItem(key);
+    }
+  } catch {}
+  saveState.saved.clear();
+  lastFilmstripSig = '';
+  renderLibrary();
+  renderCloudSave();
+  toast('Saved-file markers cleared. Your files are unchanged.');
+});
+
+ui.emptyAction.addEventListener('click', () => {
+  const filtering = Boolean(ui.librarySearch.value.trim()) || ui.libraryFilter.value !== 'all';
+  if (filtering) {
+    ui.librarySearch.value = '';
+    ui.libraryFilter.value = 'all';
+    ui.libraryFilter._syncMenu?.();
+    lastFilmstripSig = '';
+    renderLibrary();
+    return;
+  }
+  ui.urls.focus();
+  ui.urls.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+
+function focusableElements(container) {
+  return Array.from(
+    container.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+  ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+}
+
+function trapFocus(container, event) {
+  const items = focusableElements(container);
+  if (!items.length) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (!container.contains(document.activeElement)) {
+    event.preventDefault();
+    first.focus();
+  } else if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function settingsTabs() {
+  return Array.from(document.querySelectorAll('.settings-nav [role="tab"]'));
+}
+
+function setSettingsTab(name, { focus = false } = {}) {
+  const tabs = settingsTabs();
+  const target = tabs.find((tab) => tab.dataset.tab === name) || tabs[0];
+  if (!target) return;
+  activeSettingsTab = target.dataset.tab;
+  for (const tab of tabs) {
+    const selected = tab === target;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  }
+  for (const panel of document.querySelectorAll('.settings-panel')) {
+    panel.hidden = panel.dataset.panel !== activeSettingsTab;
+  }
+  if (focus) target.focus();
+}
+
+function openSettings(tab = 'general') {
+  settingsReturnFocus = document.activeElement;
+  renderSettingsDialog();
+  ui.settingsModal.hidden = false;
+  ui.settingsModal.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  setSettingsTab(tab, { focus: true });
+}
+
+function closeSettings() {
+  if (ui.settingsModal.hidden) return;
+  ui.settingsModal.hidden = true;
+  ui.settingsModal.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+  const target = settingsReturnFocus;
+  settingsReturnFocus = null;
+  if (target && document.contains(target)) target.focus();
+}
+
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !ui.confirmModal.hidden) {
     event.preventDefault();
@@ -866,9 +1664,22 @@ document.addEventListener('keydown', (event) => {
     }
     return;
   }
+  if (event.key === 'Escape' && !ui.settingsModal.hidden) {
+    event.preventDefault();
+    closeSettings();
+    return;
+  }
+  if (event.key === 'Tab' && !ui.settingsModal.hidden) {
+    trapFocus(ui.settingsModal, event);
+    return;
+  }
   if (event.key === 'Escape' && !ui.trackModal.hidden) {
     event.preventDefault();
     closeTrackModal();
+    return;
+  }
+  if (event.key === 'Tab' && !ui.trackModal.hidden) {
+    trapFocus(ui.trackModal, event);
   }
 });
 
@@ -1262,7 +2073,9 @@ function scheduleRender() {
     renderSettings();
     renderActivity();
     renderLibrary();
+    renderAccessNotice();
     maybeNotifyFinished();
+    autoSave();
   });
 }
 
@@ -1330,6 +2143,34 @@ async function submitJobs(payload) {
   return result;
 }
 
+function youtubeKey(url) {
+  try {
+    const parsed = new URL(url, location.origin);
+    const list = parsed.searchParams.get('list');
+    if (list) return `pl:${list}`;
+    const video = parsed.searchParams.get('v');
+    if (video) return `vid:${video}`;
+    if (parsed.hostname === 'youtu.be') {
+      return `vid:${parsed.pathname.replace(/^\/+/, '').slice(0, 11)}`;
+    }
+    const pathMatch = parsed.pathname.match(/\/(?:shorts|embed)\/([\w-]{11})/);
+    if (pathMatch) return `vid:${pathMatch[1]}`;
+    return `url:${parsed.href}`;
+  } catch {
+    return `url:${String(url)}`;
+  }
+}
+
+function jobLinkKey(job) {
+  if (job.playlistId) return `pl:${job.playlistId}`;
+  return youtubeKey(job.url || '');
+}
+
+function activeDuplicateKeys(urls) {
+  const existing = new Set(jobs.filter((job) => !jobExpired(job)).map((job) => jobLinkKey(job)));
+  return [...new Set(urls.map((url) => youtubeKey(url)).filter((key) => existing.has(key)))];
+}
+
 async function startDownload() {
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission().catch(() => {});
@@ -1345,6 +2186,29 @@ async function startDownload() {
   }
 
   const hasPreview = Boolean(previewData?.sources.length);
+
+  // Cloud jobs expire, so the server permits the same link again. Within one
+  // session a second copy is rarely wanted, so ask before making one.
+  if (cloud.mode === 'cloud') {
+    const attemptUrls = hasPreview
+      ? previewData.sources.filter((source, index) => selected[index]?.size).map((source) => source.url)
+      : urls;
+    const duplicates = activeDuplicateKeys(attemptUrls);
+    if (duplicates.length) {
+      const confirmed = await askConfirm({
+        title: 'Already in this session',
+        message: `${duplicates.length === 1 ? 'That link is' : `${duplicates.length} links are`} still in your library. Starting again creates a second copy and saves the files again.`,
+        confirmLabel: 'Download again',
+        cancelLabel: 'Skip'
+      });
+      if (!confirmed) {
+        toast(
+          `Skipped ${duplicates.length} link${duplicates.length === 1 ? '' : 's'} already in this session.`
+        );
+        return;
+      }
+    }
+  }
 
   // A preview means the user has seen the track list. Download the tracks
   // they kept selected, whether the list is open or not.
@@ -1379,6 +2243,7 @@ async function startDownload() {
         isVideo
       });
       if (result.created?.length) {
+        const selectedTracks = result.created.reduce((n, job) => n + job.trackCount, 0);
         ui.urls.value = '';
         ui.selectionPanel.hidden = true;
         setChooseOpen(false);
@@ -1389,9 +2254,7 @@ async function startDownload() {
         ui.choose.hidden = false;
         ui.trackFilter.hidden = true;
         updateDownloadButton();
-        toast(
-          `Downloading ${result.created.reduce((n, j) => n + j.trackCount, 0)} selected track${result.created.length === 1 ? '' : 's'}.`
-        );
+        toast(`Downloading ${selectedTracks} selected track${selectedTracks === 1 ? '' : 's'}.`);
       }
       for (const err of result.errors || []) toast(`Could not start that link: ${err.error}`, 'error');
       await refresh();
@@ -1464,6 +2327,8 @@ async function maybeAskCookieChoice() {
   localStorage.setItem('snagly-cookie-choice', '1');
   await postSettings({ useCookies });
   if (ui.cookieToggle) ui.cookieToggle.checked = useCookies;
+  renderConnection();
+  renderSettingsDialog();
   toast(
     useCookies
       ? 'YouTube sign-in enabled. Change it any time in the composer.'
@@ -1678,8 +2543,10 @@ ui.theme.addEventListener('click', () => {
   applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
 });
 
-ui.cookieToggle?.addEventListener('change', () => {
-  postSettings({ useCookies: ui.cookieToggle.checked });
+ui.cookieToggle?.addEventListener('change', async () => {
+  await postSettings({ useCookies: ui.cookieToggle.checked });
+  renderConnection();
+  renderSettingsDialog();
 });
 
 ui.pause.addEventListener('click', async () => {
@@ -1697,9 +2564,25 @@ ui.filmstrip.addEventListener('click', async (event) => {
   const id = button.closest('.tile')?.dataset.job;
   const job = jobs.find((j) => j.id === id);
   if (!job) return;
+  if (button.dataset.action === 'zip') {
+    if (jobExpired(job)) {
+      toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+    } else if (job.archiveUrl) {
+      window.location.assign(job.archiveUrl);
+    } else {
+      toast('The ZIP is not ready yet.', 'error');
+    }
+    return;
+  }
   if (button.dataset.action === 'open') {
     if (cloud.mode === 'cloud') {
-      downloadOrSaveJob(job);
+      if (jobExpired(job)) {
+        await renewExpiredJob(job);
+        return;
+      }
+      downloadOrSaveJob(job, {
+        force: job.done > 0 && savedTrackCount(job) === job.done
+      });
     } else {
       try {
         await api('/api/open', { method: 'POST', body: JSON.stringify({ path: job.folder }) });
@@ -1736,7 +2619,13 @@ ui.modalOpenFolder.addEventListener('click', async () => {
   const job = jobs.find((j) => j.id === openModalJobId);
   if (!job) return;
   if (cloud.mode === 'cloud') {
-    await downloadOrSaveJob(job);
+    if (jobExpired(job)) {
+      await renewExpiredJob(job);
+      return;
+    }
+    await downloadOrSaveJob(job, {
+      force: job.done > 0 && savedTrackCount(job) === job.done
+    });
     return;
   }
   try {
@@ -1744,6 +2633,20 @@ ui.modalOpenFolder.addEventListener('click', async () => {
   } catch (err) {
     toast(err.message, 'error');
   }
+});
+
+ui.modalZip.addEventListener('click', () => {
+  const job = jobs.find((j) => j.id === openModalJobId);
+  if (!job) return;
+  if (jobExpired(job)) {
+    toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+    return;
+  }
+  if (!job.archiveUrl) {
+    toast('The ZIP is not ready yet.', 'error');
+    return;
+  }
+  window.location.assign(job.archiveUrl);
 });
 
 ui.modalYouTube.addEventListener('click', () => {
@@ -2109,6 +3012,7 @@ function initSelectMenus() {
     function render() {
       menu.innerHTML = '';
       options().forEach((opt, index) => {
+        if (opt.hidden) return;
         const item = document.createElement('div');
         item.className = 'select-option';
         item.id = `${select.id}Opt${index}`;
