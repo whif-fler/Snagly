@@ -179,6 +179,8 @@
           </button>
           <div class="library-menu" id="libraryMenu" role="menu" hidden>
             <button type="button" role="menuitem" id="exportButton">Export history</button>
+            <button type="button" role="menuitem" id="clearLibraryButton" class="destructive">Clear library</button>
+            <button type="button" role="menuitem" id="deleteAllButton" class="destructive">Delete all downloads</button>
             <button type="button" role="menuitem" id="clearCacheButton" class="destructive">Clear preview cache</button>
           </div>
         </div>
@@ -243,6 +245,7 @@
           <button class="quiet-button" id="modalYouTube" type="button">Open on YouTube</button>
           <button class="quiet-button" id="modalRetryAll" type="button">Retry failed</button>
           <button class="quiet-button danger" id="modalCancel" type="button" hidden>Cancel download</button>
+          <button class="quiet-button danger" id="modalDeleteFiles" type="button" hidden>Delete files</button>
           <button class="quiet-button danger" id="modalRemove" type="button">Remove from library</button>
         </div>
       </div>
@@ -309,18 +312,15 @@
                 </div>
                 <div class="settings-row">
                   <div class="settings-row-copy">
-                    <span class="settings-label">Quality</span>
-                    <span class="settings-help">Quality menus adapt to what each source actually offers.</span>
-                  </div>
-                  <span class="settings-value">Set in composer</span>
-                </div>
-                <div class="settings-row">
-                  <div class="settings-row-copy">
                     <span class="settings-label">Duplicate links</span>
-                    <span class="settings-help">Snagly asks before adding a link that is still in your library.</span>
+                    <span class="settings-help">What to do when a link is still in your library.</span>
                   </div>
-                  <span class="settings-value">Always ask</span>
+                  <select id="duplicatePolicy" aria-label="Duplicate links">
+                    <option value="ask">Always ask</option>
+                    <option value="skip">Skip duplicates</option>
+                  </select>
                 </div>
+                <p class="settings-note">Audio and video quality are chosen for each download in the composer, because each source offers different formats.</p>
               </div>
             </section>
 
@@ -380,6 +380,7 @@
                     <small id="cookieSourceNote">Local only. Nothing is uploaded.</small>
                   </span>
                 </label>
+                <p class="settings-note settings-risk" id="cookieRiskNote">Using signed-in cookies lets yt-dlp make requests as your account. Automated downloads can still be rate-limited, challenged or, in rare cases, restricted, so leave this off unless you need it. Treat <code>cookies.txt</code> like a password, and only download media you have the rights to.</p>
                 <p class="settings-note" id="youtubeNote">Snagly does not ask for your Google password and does not use Google OAuth. Local sign-in works by letting yt-dlp read cookies that already exist on this computer.</p>
               </div>
               <div class="settings-section">

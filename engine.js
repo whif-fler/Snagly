@@ -1371,6 +1371,48 @@ function setIsVideo(value) {
   broadcast();
 }
 
+function deleteJobFiles(jobId) {
+  const job = state.jobs.find((j) => j.id === jobId);
+  if (!job) return { error: 'missing' };
+  // Never pull files out from under a running yt-dlp process.
+  if (job.tracks.some((t) => t.status === 'running')) return { error: 'running' };
+
+  const folder = job.folder ? path.resolve(job.folder) : '';
+  const targets = new Set();
+  for (const track of job.tracks) {
+    if (!track.file) continue;
+    const file = path.resolve(track.file);
+    // Only delete files this job actually recorded inside its own folder.
+    if (!folder || !isPathInside(folder, file)) continue;
+    targets.add(file);
+    targets.add(`${file}.part`);
+    targets.add(`${file}.ytdl`);
+  }
+
+  let removedFiles = 0;
+  const errors = [];
+  for (const file of targets) {
+    try {
+      fs.unlinkSync(file);
+      removedFiles++;
+    } catch (err) {
+      if (err.code !== 'ENOENT') errors.push(`${path.basename(file)}: ${err.message}`);
+    }
+  }
+
+  // Remove the playlist folder only when this job left it empty. Singles share
+  // a folder, and a non-empty folder keeps the removal from doing anything.
+  if (folder) {
+    try {
+      fs.rmdirSync(folder);
+    } catch {
+      // ENOTEMPTY / ENOENT are expected; never delete the user's other files.
+    }
+  }
+
+  return { removedFiles, errors };
+}
+
 function removeJob(jobId) {
   const index = state.jobs.findIndex((j) => j.id === jobId);
   if (index === -1) return 'missing';
@@ -1590,6 +1632,7 @@ module.exports = {
   setUseCookies,
   setIsVideo,
   removeJob,
+  deleteJobFiles,
   cancelJob,
   clearCache,
   getHistory,

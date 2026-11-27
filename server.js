@@ -518,12 +518,27 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'DELETE' && pathname.startsWith('/api/jobs/')) {
     const id = pathname.split('/')[3];
+    // Local only: ?files=1 removes the media this job wrote before dropping the
+    // library entry. The cloud API never accepts this option.
+    const deleteFiles = new URL(req.url, 'http://127.0.0.1').searchParams.get('files') === '1';
     try {
+      let deleted = null;
+      if (deleteFiles) {
+        deleted = engine.deleteJobFiles(id);
+        if (deleted.error === 'missing') return sendJson(res, 404, { error: 'Job not found' });
+        if (deleted.error === 'running')
+          return sendJson(res, 409, { error: 'Job is still downloading. Cancel it first' });
+        if (deleted.errors.length) {
+          return sendJson(res, 500, {
+            error: `Could not delete ${deleted.errors.length} file${deleted.errors.length === 1 ? '' : 's'}: ${deleted.errors[0]}`
+          });
+        }
+      }
       const result = engine.removeJob(id);
       if (result === 'missing') return sendJson(res, 404, { error: 'Job not found' });
       if (result === 'running')
         return sendJson(res, 409, { error: 'Job is still downloading. Cancel it first' });
-      return sendJson(res, 200, { ok: true });
+      return sendJson(res, 200, { ok: true, removedFiles: deleted?.removedFiles ?? 0 });
     } catch (err) {
       return sendJson(res, 500, { error: err.message });
     }

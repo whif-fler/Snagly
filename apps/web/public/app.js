@@ -59,6 +59,8 @@ const ui = {
   libraryFilter: $('libraryFilter'),
   librarySort: $('librarySort'),
   exportButton: $('exportButton'),
+  clearLibraryButton: $('clearLibraryButton'),
+  deleteAllButton: $('deleteAllButton'),
   clearCacheButton: $('clearCacheButton'),
   trackModal: $('trackModal'),
   modalClose: $('modalClose'),
@@ -71,6 +73,7 @@ const ui = {
   modalYouTube: $('modalYouTube'),
   modalRetryAll: $('modalRetryAll'),
   modalCancel: $('modalCancel'),
+  modalDeleteFiles: $('modalDeleteFiles'),
   modalRemove: $('modalRemove'),
   confirmModal: $('confirmModal'),
   confirmTitle: $('confirmTitle'),
@@ -102,6 +105,8 @@ const ui = {
   youtubeNote: $('youtubeNote'),
   cookieSourceNote: $('cookieSourceNote'),
   cookieToggleRow: $('cookieToggleRow'),
+  cookieRiskNote: $('cookieRiskNote'),
+  duplicatePolicy: $('duplicatePolicy'),
   sessionMode: $('sessionMode'),
   sessionUserRow: $('sessionUserRow'),
   privacyMode: $('privacyMode'),
@@ -155,8 +160,10 @@ const saveState = {
 
 const AUTO_SAVE_KEY = 'snagly-autosave';
 const NOTIFY_KEY = 'snagly-notify';
+const DUPLICATE_KEY = 'snagly-duplicate-policy';
 let autoSaveEnabled = readLocal(AUTO_SAVE_KEY) !== '0';
 let notifyEnabled = readLocal(NOTIFY_KEY) !== '0';
+let duplicatePolicy = readLocal(DUPLICATE_KEY) === 'skip' ? 'skip' : 'ask';
 
 function readLocal(key) {
   try {
@@ -501,7 +508,7 @@ async function saveTrack(job, track, { force = false, batch = false } = {}) {
   if (!track?.downloadUrl && !track?.id) return false;
   if (jobExpired(job)) {
     if (!batch) {
-      toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+      toast('That server copy has expired. Download it again to make a new copy.', 'error');
     }
     return false;
   }
@@ -586,7 +593,7 @@ async function saveTrack(job, track, { force = false, batch = false } = {}) {
 async function saveJob(job, { force = false } = {}) {
   if (!job) return;
   if (jobExpired(job)) {
-    toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+    toast('That server copy has expired. Download it again to make a new copy.', 'error');
     return;
   }
   const done = job.tracks.filter((t) => t.status === 'done');
@@ -632,7 +639,7 @@ async function saveJob(job, { force = false } = {}) {
 function downloadOrSaveJob(job, { force = false } = {}) {
   if (!job) return;
   if (jobExpired(job)) {
-    toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+    toast('That server copy has expired. Download it again to make a new copy.', 'error');
     return;
   }
   if (supportsDirectoryPicker) return saveJob(job, { force });
@@ -647,7 +654,7 @@ function downloadOrSaveJob(job, { force = false } = {}) {
 async function renewExpiredJob(job) {
   const url = job?.sourceUrl || job?.url;
   if (!job || !url) {
-    toast('Could not find the original link for that playlist.', 'error');
+    toast('Could not find the original link for that item.', 'error');
     return;
   }
   const indexes = (job.tracks || []).map((track) => track.index).filter(Number.isInteger);
@@ -663,7 +670,7 @@ async function renewExpiredJob(job) {
     const result = await submitJobs(payload);
     if (!result.created?.length) {
       const reason = result.errors?.[0]?.error;
-      toast(reason || 'Could not start a new copy of that playlist.', 'error');
+      toast(reason || 'Could not start a new copy of that download.', 'error');
       return;
     }
     closeTrackModal();
@@ -683,7 +690,7 @@ async function renewExpiredJob(job) {
 async function downloadOrSaveTrack(job, track) {
   if (!job || !track) return;
   if (jobExpired(job)) {
-    toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+    toast('That server copy has expired. Download it again to make a new copy.', 'error');
     return;
   }
   if (supportsDirectoryPicker) return saveTrack(job, track, { force: true });
@@ -904,6 +911,10 @@ function renderSettingsDialog() {
   ui.sessionMode.textContent = isCloud ? 'Cloud · anonymous session' : 'Local app';
   ui.sessionUserRow.hidden = !isCloud;
   ui.cookieToggleRow.hidden = isCloud;
+  ui.cookieRiskNote.hidden = isCloud;
+  ui.deleteAllButton.hidden = isCloud;
+  ui.duplicatePolicy.value = duplicatePolicy;
+  ui.duplicatePolicy._syncMenu?.();
 
   if (isCloud) {
     ui.youtubeStatus.textContent = 'Guest';
@@ -985,7 +996,7 @@ function renderActivity() {
   const runningTrack = active.flatMap((j) => j.tracks).find((t) => t.status === 'running');
   const allTracks = active.flatMap((j) => j.tracks);
 
-  ui.activityTitle.textContent = active.length === 1 ? active[0].title : `${active.length} playlists`;
+  ui.activityTitle.textContent = active.length === 1 ? active[0].title : `${active.length} downloads`;
   ui.activityTrack.textContent = status.paused
     ? 'Paused. Finished tracks are still available.'
     : runningTrack
@@ -1148,7 +1159,7 @@ function renderLibrary() {
   const allTracks = jobs.reduce((n, j) => n + j.trackCount, 0);
   const allSaved = jobs.reduce((n, j) => n + savedTrackCount(j), 0);
   ui.librarySummary.textContent = jobs.length
-    ? `${jobs.length} playlist${jobs.length === 1 ? '' : 's'}, ${allDone} of ${allTracks} tracks${
+    ? `${jobs.length} download${jobs.length === 1 ? '' : 's'}, ${allDone} of ${allTracks} tracks${
         cloud.mode === 'cloud' && allSaved ? `, ${allSaved} saved to this device` : ''
       }`
     : '';
@@ -1161,7 +1172,7 @@ function renderLibrary() {
       const copy = {
         saved: [
           'Nothing saved yet',
-          'Choose a folder in the composer, then use Save on a finished playlist. Saved files stay on your device.'
+          'Choose a folder in the composer, then use Save on a finished download. Saved files stay on your device.'
         ],
         expired: [
           'No expired copies',
@@ -1176,7 +1187,7 @@ function renderLibrary() {
         cancelled: ['No cancelled downloads', 'Cancelled jobs appear here if you need to retry them.']
       };
       const entry = searching && filter === 'all' ? null : copy[filter];
-      ui.emptyTitle.textContent = entry?.[0] || 'No matching playlists';
+      ui.emptyTitle.textContent = entry?.[0] || 'No matching downloads';
       ui.emptyText.textContent =
         entry?.[1] || 'Try a different search, or clear the filter to see everything in this session.';
       ui.emptyAction.textContent = 'Clear filters';
@@ -1404,6 +1415,7 @@ function openTrackModal(jobId) {
   ui.modalCancel.hidden = !isActive;
   ui.modalCancel.dataset.job = jobId;
   ui.modalRemove.hidden = isActive;
+  ui.modalDeleteFiles.hidden = isActive || cloud.mode === 'cloud';
   modalReturnFocus = document.activeElement;
   ui.trackModal.hidden = false;
   ui.trackModal.setAttribute('aria-hidden', 'false');
@@ -1518,6 +1530,11 @@ ui.autoSaveToggle.addEventListener('change', () => {
   writeLocal(AUTO_SAVE_KEY, autoSaveEnabled ? '1' : '0');
   renderCloudSave();
   if (autoSaveEnabled) autoSave();
+});
+
+ui.duplicatePolicy.addEventListener('change', () => {
+  duplicatePolicy = ui.duplicatePolicy.value === 'skip' ? 'skip' : 'ask';
+  writeLocal(DUPLICATE_KEY, duplicatePolicy);
 });
 
 ui.settingsChooseFolder.addEventListener('click', async () => {
@@ -2127,17 +2144,27 @@ async function submitJobs(payload) {
   let result = await api('/api/jobs', { method: 'POST', body: JSON.stringify(payload) });
   const duplicates = (result.errors || []).filter((error) => error.duplicate);
   if (duplicates.length && !payload.allowDuplicate) {
-    const confirmed = await askConfirm({
-      title: 'Already in library',
-      message: `${duplicates.length} link${duplicates.length === 1 ? ' is' : 's are'} already in your library. Add ${duplicates.length === 1 ? 'it' : 'them'} again?`,
-      confirmLabel: 'Add anyway',
-      cancelLabel: 'Skip'
-    });
+    const confirmed =
+      duplicatePolicy === 'ask'
+        ? await askConfirm({
+            title: 'Already in library',
+            message: `${duplicates.length} link${duplicates.length === 1 ? ' is' : 's are'} already in your library. Add ${duplicates.length === 1 ? 'it' : 'them'} again?`,
+            confirmLabel: 'Add anyway',
+            cancelLabel: 'Skip'
+          })
+        : false;
     if (confirmed) {
       result = await api('/api/jobs', {
         method: 'POST',
         body: JSON.stringify({ ...payload, allowDuplicate: true })
       });
+    } else {
+      // The duplicate warning already explained what happened; do not let the
+      // same errors surface again as "could not read that link".
+      result.errors = (result.errors || []).filter((error) => !error.duplicate);
+      toast(
+        `Skipped ${duplicates.length} link${duplicates.length === 1 ? '' : 's'} already in your library.`
+      );
     }
   }
   return result;
@@ -2195,6 +2222,12 @@ async function startDownload() {
       : urls;
     const duplicates = activeDuplicateKeys(attemptUrls);
     if (duplicates.length) {
+      if (duplicatePolicy === 'skip') {
+        toast(
+          `Skipped ${duplicates.length} link${duplicates.length === 1 ? '' : 's'} already in this session.`
+        );
+        return;
+      }
       const confirmed = await askConfirm({
         title: 'Already in this session',
         message: `${duplicates.length === 1 ? 'That link is' : `${duplicates.length} links are`} still in your library. Starting again creates a second copy and saves the files again.`,
@@ -2282,11 +2315,11 @@ async function startDownload() {
     if (result.created?.length) {
       ui.urls.value = '';
       toast(
-        `Added ${result.created.length} playlist${result.created.length === 1 ? '' : 's'}. ${isVideo ? 'Downloading video' : 'Downloading audio'} now.`
+        `Added ${result.created.length} download${result.created.length === 1 ? '' : 's'}. ${isVideo ? 'Downloading video' : 'Downloading audio'} now.`
       );
     }
     for (const err of result.errors || []) {
-      toast(`Could not read that playlist: ${err.error}`, 'error');
+      toast(`Could not read that link: ${err.error}`, 'error');
     }
     await refresh();
   } catch (err) {
@@ -2566,7 +2599,7 @@ ui.filmstrip.addEventListener('click', async (event) => {
   if (!job) return;
   if (button.dataset.action === 'zip') {
     if (jobExpired(job)) {
-      toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+      toast('That server copy has expired. Download it again to make a new copy.', 'error');
     } else if (job.archiveUrl) {
       window.location.assign(job.archiveUrl);
     } else {
@@ -2639,7 +2672,7 @@ ui.modalZip.addEventListener('click', () => {
   const job = jobs.find((j) => j.id === openModalJobId);
   if (!job) return;
   if (jobExpired(job)) {
-    toast('That server copy has expired. Download the playlist again to make a new copy.', 'error');
+    toast('That server copy has expired. Download it again to make a new copy.', 'error');
     return;
   }
   if (!job.archiveUrl) {
@@ -2716,6 +2749,99 @@ ui.modalRemove.addEventListener('click', async () => {
   } catch (err) {
     toast(err.message, 'error');
   }
+});
+
+ui.modalDeleteFiles.addEventListener('click', async () => {
+  const job = jobs.find((j) => j.id === openModalJobId);
+  if (!job) return;
+  const fileCount = job.tracks.filter((track) => track.file).length;
+  const confirmed = await askConfirm({
+    title: 'Delete files from this computer?',
+    message: `This permanently deletes ${fileCount} downloaded file${fileCount === 1 ? '' : 's'} from “${job.title}” and removes the library entry. Other files in the folder are not touched.`,
+    confirmLabel: 'Delete files',
+    cancelLabel: 'Keep',
+    danger: true
+  });
+  if (!confirmed) return;
+  try {
+    const result = await api(`/api/jobs/${job.id}?files=1`, { method: 'DELETE' });
+    closeTrackModal();
+    await refresh();
+    const removed = result.removedFiles ?? fileCount;
+    toast(`Deleted ${removed} file${removed === 1 ? '' : 's'} and removed the download.`);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+ui.clearLibraryButton.addEventListener('click', async () => {
+  if (!jobs.length) {
+    toast('Library is already empty.');
+    return;
+  }
+  const isCloud = cloud.mode === 'cloud';
+  const confirmed = await askConfirm({
+    title: 'Clear library?',
+    message: isCloud
+      ? `This removes ${jobs.length === 1 ? 'your only download' : `all ${jobs.length} downloads`} and ${jobs.length === 1 ? 'its server copy' : 'their server copies'}. Files you already saved to this device stay where they are.`
+      : `This removes ${jobs.length === 1 ? 'your only download' : `all ${jobs.length} downloads`} from the library. Downloaded files stay on this computer.`,
+    confirmLabel: 'Clear library',
+    cancelLabel: 'Keep',
+    danger: true
+  });
+  if (!confirmed) return;
+
+  let removed = 0;
+  let failed = 0;
+  for (const job of jobs) {
+    try {
+      await api(`/api/jobs/${job.id}`, { method: 'DELETE' });
+      removed++;
+    } catch {
+      failed++;
+    }
+  }
+  await refresh();
+  toast(
+    `Cleared ${removed} download${removed === 1 ? '' : 's'}.${
+      failed ? ` ${failed} active download${failed === 1 ? ' was' : 's were'} kept.` : ''
+    }`,
+    failed ? 'error' : undefined
+  );
+});
+
+ui.deleteAllButton.addEventListener('click', async () => {
+  if (cloud.mode === 'cloud' || !jobs.length) return;
+  const confirmed = await askConfirm({
+    title: 'Delete every downloaded file?',
+    message: `This permanently deletes the files Snagly recorded for ${
+      jobs.length === 1 ? 'your only download' : `all ${jobs.length} downloads`
+    } and clears the library. Files outside these downloads are not touched.`,
+    confirmLabel: 'Delete everything',
+    cancelLabel: 'Keep',
+    danger: true
+  });
+  if (!confirmed) return;
+
+  let removedJobs = 0;
+  let removedFiles = 0;
+  let failed = 0;
+  for (const job of jobs) {
+    try {
+      const result = await api(`/api/jobs/${job.id}?files=1`, { method: 'DELETE' });
+      removedJobs++;
+      removedFiles += result.removedFiles || 0;
+    } catch {
+      failed++;
+    }
+  }
+  await refresh();
+  toast(
+    `Deleted ${removedFiles} file${removedFiles === 1 ? '' : 's'} and cleared ${removedJobs} download${
+      removedJobs === 1 ? '' : 's'
+    }.${failed ? ` ${failed} active download${failed === 1 ? ' was' : 's were'} kept.` : ''}`,
+    failed ? 'error' : undefined
+  );
 });
 
 ui.cancelButton.addEventListener('click', async () => {
