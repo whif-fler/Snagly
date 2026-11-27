@@ -1642,6 +1642,7 @@ button { cursor: pointer; }
 /* ---- Settings dialog ---- */
 .settings-modal {
   width: min(880px, 100%);
+  height: min(620px, 88vh);
   max-height: 88vh;
 }
 .settings-head {
@@ -1840,7 +1841,7 @@ button { cursor: pointer; }
   .filmstrip { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 24px 16px; }
   .empty-state { grid-template-columns: auto minmax(0, 1fr); align-items: start; padding: 22px 20px; }
   .empty-state .quiet-button { grid-column: 2; justify-self: start; margin-top: 4px; }
-  .settings-modal { width: min(100%, 720px); max-height: 90vh; }
+  .settings-modal { width: min(100%, 720px); height: min(680px, 90vh); max-height: 90vh; }
   .settings-layout { grid-template-columns: 1fr; }
   .settings-nav {
     flex-direction: row;

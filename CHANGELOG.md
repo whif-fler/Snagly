@@ -25,6 +25,8 @@ All notable changes to Snagly are documented here. The format follows
 
 ### Changed
 
+- Settings keeps one stable height, so switching tabs no longer resizes the
+  dialog. Taller tabs scroll inside the panel while the footer stays put.
 - Removed the `localBrowserCookies` capability and the local `useCookies` /
   `cookieSource` status fields.
 
