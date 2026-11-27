@@ -150,7 +150,8 @@ test('signed download tokens reject tampering and expiry', async () => {
   const token = signer.sign({ u: 'usr_1', j: 'job_1', t: 'trk_1' }, 1000);
   assert.deepEqual(signer.verify(token).t, 'trk_1');
   assert.equal(signer.verify(`${token}x`), null);
-  assert.equal(signer.verify(token.replace(/.$/, 'a')), null);
+  const tampered = `${token.slice(0, -1)}${token.endsWith('a') ? 'b' : 'a'}`;
+  assert.equal(signer.verify(tampered), null);
   const short = signer.sign({ u: 'usr_1' }, 5);
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(signer.verify(short), null);
