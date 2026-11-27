@@ -238,6 +238,7 @@
         <a href="/privacy" target="_blank" rel="noopener">Privacy &amp; data</a>
       </div>
     </footer>
+  </main>
 
     <div class="modal-overlay" id="trackModal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-label="Track details">
       <div class="modal" aria-labelledby="modalTitle">
@@ -345,7 +346,7 @@
                   </div>
                   <div class="settings-actions">
                     <button class="quiet-button" id="settingsChooseFolder" type="button">Choose folder</button>
-                    <button class="text-button" id="settingsForgetFolder" type="button" hidden>Forget folder</button>
+                    <button class="quiet-button" id="settingsForgetFolder" type="button" hidden>Forget folder</button>
                   </div>
                 </div>
                 <div class="settings-row">
@@ -397,15 +398,22 @@
                 </div>
                 <p class="settings-note" id="youtubeNote">Snagly does not use YouTube cookies, ask for a Google password or use Google OAuth. Age-restricted, private, members-only and bot-checked videos may fail.</p>
               </div>
+              <div class="settings-section" id="connectionsToolsSection">
+                <div class="settings-section-head">
+                  <h3>Download tools</h3>
+                  <button class="quiet-button button-compact" id="checkTools" type="button">Check again</button>
+                </div>
+                <div class="settings-kv"><span>yt-dlp</span><span class="settings-value" id="toolYtdlp" aria-live="polite">Checking…</span></div>
+                <div class="settings-kv"><span>FFmpeg</span><span class="settings-value" id="toolFfmpeg">Checking…</span></div>
+                <div class="settings-kv"><span>FFprobe</span><span class="settings-value" id="toolFfprobe">Checking…</span></div>
+                <p class="settings-note" id="toolsNote">Snagly uses yt-dlp to fetch media and FFmpeg to convert it. If a tool is missing, install it and check again.</p>
+              </div>
               <div class="settings-section">
                 <h3>This session</h3>
                 <div class="settings-kv"><span>Mode</span><span id="sessionMode">Local app</span></div>
                 <div class="settings-kv" id="sessionUserRow" hidden><span>Account</span><span>Anonymous session</span></div>
-                <div class="settings-kv"><span>YouTube API</span><span>Not used</span></div>
-              </div>
-              <div class="settings-section">
-                <h3>Desktop app</h3>
-                <p class="settings-note">The planned desktop app will keep the same guest-only access: no YouTube sign-in, cookies or account credentials. It is not available yet.</p>
+                <div class="settings-kv" id="sessionRetentionRow" hidden><span>Server copies</span><span id="sessionRetention">24 hours</span></div>
+                <div class="settings-kv"><span>Downloads run</span><span id="sessionWhere">On this computer</span></div>
               </div>
             </section>
 
@@ -421,7 +429,7 @@
                 <h3>Controls</h3>
                 <div class="settings-actions settings-actions-start">
                   <a class="quiet-button link-button" href="/privacy" target="_blank" rel="noopener">Read privacy &amp; data</a>
-                  <button class="text-button" id="resetSaved" type="button">Forget saved-file markers</button>
+                  <button class="quiet-button" id="resetSaved" type="button">Forget saved-file markers</button>
                 </div>
                 <p class="settings-note">Forgetting markers does not delete files. It only resets the “saved to device” labels in this browser.</p>
               </div>
@@ -449,7 +457,6 @@
         </div>
       </div>
     </div>
-  </main>
 
   <div class="toast-region" id="toasts" aria-live="polite"></div>
   <script src="/app.js"></script>

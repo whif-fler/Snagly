@@ -172,21 +172,25 @@ Five tabs, with mode-inapplicable sections removed rather than disabled:
   retention and device saving without exposing worker controls. The local variant
   edits the save folder in place, with Browse and Save, and says that only new
   downloads use the new path.
-- **Connections** – guest-only status, the trust boundary, and a clear statement
+- **Connections** – guest-only status, the trust boundary, and live
+  yt-dlp/FFmpeg/FFprobe version checks with a **Check again** action. It states
   that Snagly does not use cookies, passwords or OAuth and that some videos may
-  fail. It also states that this build is not a desktop app.
+  fail, then shows the current session mode and where downloads run.
 - **Privacy** – server processing, retention, cookie policy, saved-file marker
   reset.
 
 Settings is the only connection-education surface. It traps focus, closes on
 Escape, returns focus to the control that opened it, and scrolls inside the
-dialog on short screens. Global worker/pause controls are not shown to cloud
-users.
+dialog on short screens. On phones the five tabs sit in a fixed 3+2 grid so
+every tab stays visible and the selected pill never changes a button's size.
+Global worker/pause controls are not shown to cloud users.
 
 ### Dialogs, menus and toasts
 
 - The track dialog, settings dialog, confirm dialog and library menu all use
   `aria-modal`, labelled titles and focus containment. Escape restores focus.
+  Overlays are direct children of `body`, so they stack above the sticky topbar
+  even when a short screen pushes the dialog to the top of the viewport.
 - Toasts are informational only; destructive confirmations use the alert
   dialog.
 - Long toasts wrap instead of clipping at 320 px.

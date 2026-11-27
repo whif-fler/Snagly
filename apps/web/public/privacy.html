@@ -25,7 +25,19 @@
         <img src="/assets/icon.svg" alt="" width="28" height="28" />
         <span>Snagly</span>
       </a>
-      <a class="quiet-button" href="/">Back to Snagly</a>
+      <a class="quiet-button policy-back" href="/">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path
+            d="M10 3 5 8l5 5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        Back to Snagly
+      </a>
     </header>
 
     <main class="policy">
@@ -49,10 +61,10 @@
       <section id="localPrivacy">
         <h2>Local mode</h2>
         <p>
-          In local mode Snagly is software running on your Windows computer. It
-          listens on <code>127.0.0.1</code>, stores records in <code>data/</code>,
-          and writes media into the folder you choose. There is no Snagly account,
-          no cloud and no developer server.
+          In local mode Snagly is software running on your computer. It listens on
+          <code>127.0.0.1</code>, stores records in <code>data/</code>, and writes
+          media into the folder you choose. There is no Snagly account and no cloud
+          service.
         </p>
 
         <h3>What stays on this computer</h3>
@@ -94,15 +106,14 @@
         </div>
         <p>
           <code>data/</code> is plain JSON, not encrypted, and is excluded from
-          Git. On NTFS, Snagly restricts it to your Windows account (plus SYSTEM
-          and Administrators). Anyone who can sign in as you can read it.
+          Git. It is readable by your Windows account.
         </p>
 
         <h3>What leaves this computer</h3>
         <p>
           The only requests are to YouTube/Google for links you paste, plus cover
           art fetched by the local server from YouTube image hosts. Your browser
-          only connects to this computer. Nothing is sent to the developer.
+          only connects to this computer.
         </p>
         <p>
           <strong>YouTube access is guest-only.</strong> Snagly never reads browser
@@ -112,8 +123,8 @@
         </p>
         <p>
           <strong>Export history</strong> creates a CSV only when you click the
-          button. It contains full file paths, which can reveal your Windows
-          username and folder layout. Review it before sharing.
+          button. It contains full file paths, which can reveal your username and
+          folder layout. Review it before sharing.
         </p>
 
         <h3>Cookies</h3>
@@ -227,8 +238,7 @@
         <p>
           Requests go to YouTube/Google for links you paste and to YouTube image
           hosts for cover art. Cloudflare (or your reverse proxy) and the hosting
-          provider process normal network metadata such as IP addresses. Nothing
-          is sent to the Snagly developer.
+          provider process normal network metadata such as IP addresses.
         </p>
 
         <h3>Security</h3>
@@ -249,7 +259,6 @@
         </li>
         <li><strong>yt-dlp</strong> and <strong>FFmpeg</strong> — run locally or on the server.</li>
         <li><strong>Cloudflare</strong> — optional TLS/tunnel provider in cloud mode.</li>
-        <li><strong>GitHub</strong> — only if you visit the repository.</li>
       </ul>
       <p>Snagly is not affiliated with YouTube or Google.</p>
 

@@ -403,6 +403,33 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, engine.getStatus());
   }
 
+  // The shared frontend probes /api/session to tell local from cloud. Answering
+  // it here keeps the browser console clean and lets privacy.js pick the right
+  // policy without logging a 404 first.
+  if (req.method === 'GET' && pathname === '/api/session') {
+    return sendJson(res, 200, {
+      capabilities: {
+        mode: 'local',
+        localFolderPicker: true,
+        fileSystemAccess: false,
+        serverTagEditing: true
+      }
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/connections') {
+    if (!rateLimit(req, res, 'connections', 30, 60_000)) return;
+    try {
+      return sendJson(
+        res,
+        200,
+        await engine.connectionReport({ refresh: url.searchParams.get('refresh') === '1' })
+      );
+    } catch (err) {
+      return sendJson(res, 500, { error: err.message });
+    }
+  }
+
   if (req.method === 'GET' && pathname === '/api/jobs') {
     try {
       engine.reconcileLibrary();

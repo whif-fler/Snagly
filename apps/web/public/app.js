@@ -113,6 +113,15 @@ const ui = {
   youtubeStatus: $('youtubeStatus'),
   youtubeHelp: $('youtubeHelp'),
   youtubeNote: $('youtubeNote'),
+  checkTools: $('checkTools'),
+  connectionsToolsSection: $('connectionsToolsSection'),
+  toolYtdlp: $('toolYtdlp'),
+  toolFfmpeg: $('toolFfmpeg'),
+  toolFfprobe: $('toolFfprobe'),
+  toolsNote: $('toolsNote'),
+  sessionRetentionRow: $('sessionRetentionRow'),
+  sessionRetention: $('sessionRetention'),
+  sessionWhere: $('sessionWhere'),
   duplicatePolicy: $('duplicatePolicy'),
   sessionMode: $('sessionMode'),
   sessionUserRow: $('sessionUserRow'),
@@ -888,6 +897,10 @@ function renderSettingsDialog() {
   ui.privacyCookies.textContent = 'Not used';
   ui.sessionMode.textContent = isCloud ? 'Cloud · anonymous session' : 'Local app';
   ui.sessionUserRow.hidden = !isCloud;
+  ui.sessionRetentionRow.hidden = !isCloud;
+  ui.sessionRetention.textContent = `${hours} hours`;
+  ui.sessionWhere.textContent = isCloud ? 'On the server' : 'On this computer';
+  ui.connectionsToolsSection.hidden = isCloud;
   ui.deleteAllButton.hidden = isCloud;
   ui.duplicatePolicy.value = duplicatePolicy;
   ui.duplicatePolicy._syncMenu?.();
@@ -913,6 +926,57 @@ function renderSettingsDialog() {
   renderThemeChoices();
   renderNotifyToggle();
   renderDestination();
+}
+
+let connectionsSeq = 0;
+
+function setToolValue(el, info) {
+  if (!el) return;
+  if (info?.found) {
+    el.textContent = info.version || 'Ready';
+    el.className = 'settings-value is-ok';
+  } else {
+    el.textContent = 'Not found';
+    el.className = 'settings-value is-warn';
+  }
+}
+
+async function loadConnections({ refresh = false } = {}) {
+  if (cloud.mode === 'cloud') return;
+  const seq = ++connectionsSeq;
+  for (const el of [ui.toolYtdlp, ui.toolFfmpeg, ui.toolFfprobe]) {
+    if (!el) continue;
+    el.textContent = 'Checking…';
+    el.className = 'settings-value';
+  }
+  if (ui.toolsNote) ui.toolsNote.textContent = 'Checking the local download tools…';
+  try {
+    const data = await api(`/api/connections${refresh ? '?refresh=1' : ''}`);
+    if (seq !== connectionsSeq) return;
+    setToolValue(ui.toolYtdlp, data.tools?.ytdlp);
+    setToolValue(ui.toolFfmpeg, data.tools?.ffmpeg);
+    setToolValue(ui.toolFfprobe, data.tools?.ffprobe);
+    if (ui.toolsNote) {
+      const missing = [
+        ['yt-dlp', data.tools?.ytdlp],
+        ['FFmpeg', data.tools?.ffmpeg],
+        ['FFprobe', data.tools?.ffprobe]
+      ]
+        .filter(([, info]) => !info?.found)
+        .map(([name]) => name);
+      ui.toolsNote.textContent = missing.length
+        ? `${missing.join(', ')} not found. Install with winget, restart Snagly, then check again.`
+        : 'Ready. yt-dlp fetches media and FFmpeg converts it.';
+    }
+  } catch (err) {
+    if (seq !== connectionsSeq) return;
+    for (const el of [ui.toolYtdlp, ui.toolFfmpeg, ui.toolFfprobe]) {
+      if (!el) continue;
+      el.textContent = 'Unavailable';
+      el.className = 'settings-value is-warn';
+    }
+    if (ui.toolsNote) ui.toolsNote.textContent = err.message;
+  }
 }
 
 function renderNotifyToggle() {
@@ -1485,6 +1549,7 @@ for (const button of [ui.settingsButton, ui.footerSettingsButton]) {
 }
 ui.connectionButton.addEventListener('click', () => openSettings('connections'));
 ui.accessNoticeButton.addEventListener('click', () => openSettings('connections'));
+ui.checkTools?.addEventListener('click', () => loadConnections({ refresh: true }));
 ui.settingsClose.addEventListener('click', closeSettings);
 ui.settingsDone.addEventListener('click', closeSettings);
 ui.settingsModal.addEventListener('click', (event) => {
@@ -1685,6 +1750,7 @@ function setSettingsTab(name, { focus = false } = {}) {
   for (const panel of document.querySelectorAll('.settings-panel')) {
     panel.hidden = panel.dataset.panel !== activeSettingsTab;
   }
+  if (activeSettingsTab === 'connections') loadConnections();
   if (focus) target.focus();
 }
 

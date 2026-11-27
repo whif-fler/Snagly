@@ -353,6 +353,57 @@ function discoverTools() {
   return tools;
 }
 
+// Tool versions are read lazily so startup never waits on two extra processes.
+// The short cache keeps repeated Connections visits cheap while still letting
+// the user force a fresh check after installing or upgrading a tool.
+const TOOL_REPORT_TTL_MS = 30_000;
+let toolReportCache = null;
+let toolReportAt = 0;
+
+function versionLine(text) {
+  const first = String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!first) return '';
+  const match = first.match(/version\s+(\S+)/i);
+  return (match ? match[1] : first).trim();
+}
+
+async function readToolVersion(exe, args) {
+  if (!exe) return { found: false, version: '' };
+  try {
+    const { stdout } = await execFileAsync(exe, args, {
+      windowsHide: true,
+      timeout: 5000,
+      maxBuffer: 1024 * 1024
+    });
+    return { found: true, version: versionLine(stdout) };
+  } catch {
+    return { found: false, version: '' };
+  }
+}
+
+async function connectionReport({ refresh = false } = {}) {
+  const now = Date.now();
+  if (!refresh && toolReportCache && now - toolReportAt < TOOL_REPORT_TTL_MS) {
+    return toolReportCache;
+  }
+  const [ytdlp, ffmpeg, ffprobe] = await Promise.all([
+    readToolVersion(tools.yt, ['--version']),
+    readToolVersion(tools.ffmpeg, ['-version']),
+    readToolVersion(tools.ffprobe, ['-version'])
+  ]);
+  toolReportCache = {
+    mode: 'local',
+    youtube: { access: 'guest' },
+    tools: { ytdlp, ffmpeg, ffprobe },
+    server: { version: '1.1.0' }
+  };
+  toolReportAt = now;
+  return toolReportCache;
+}
+
 function killProcessTree(child) {
   if (!child || child.killed) return;
   if (process.platform === 'win32' && child.pid) {
@@ -1572,6 +1623,7 @@ module.exports = {
   dataDir: () => DATA_DIR,
   formats: () => Object.entries(FORMATS).map(([k, v]) => ({ key: k, ...v })),
   videoFormats: () => Object.entries(VIDEO_FORMATS).map(([k, v]) => ({ key: k, ...v })),
+  connectionReport,
   _test: {
     sanitizeFolder,
     parseExtraction,
