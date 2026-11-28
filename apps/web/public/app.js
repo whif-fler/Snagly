@@ -1828,10 +1828,6 @@ function openTrackModal(jobId) {
             : t.status === 'failed' || t.status === 'cancelled' || t.status === 'missing'
               ? `<button class="text-button" data-action="retry-track" data-track="${escapeAttr(t.id)}">Retry</button>`
               : '';
-        const editBtn =
-          t.status === 'done' && !expired
-            ? `<button class="text-button" data-action="edit-tags" data-track="${escapeAttr(t.id)}">Edit tags</button>`
-            : '';
         const delivery =
           cloud.mode === 'cloud' && t.status === 'done'
             ? `<span class="track-delivery ${trackSaved ? 'is-saved' : ''}">${trackSaved ? `Saved to ${escapeHtml(savedFolder(t.id)) || 'this device'}` : 'Ready to save'}</span>`
@@ -1845,18 +1841,13 @@ function openTrackModal(jobId) {
         <div style="font-weight:600" data-field="title">${escapeHtml(t.title)}</div>
         <div style="font-size:11px;color:var(--faint)" data-field="artist">${escapeHtml(t.artist)}, #${String(t.index).padStart(2, '0')}</div>
         ${delivery}
-        <input type="text" data-edit="title" value="${escapeAttr(t.title)}" hidden style="width:100%;font-size:13px;font-weight:600;border:1px solid var(--hairline);border-radius:4px;padding:2px 6px;background:var(--surface)">
-        <input type="text" data-edit="artist" value="${escapeAttr(t.artist)}" hidden style="width:100%;font-size:11px;color:var(--faint);border:1px solid var(--hairline);border-radius:4px;padding:1px 6px;background:var(--surface);margin-top:2px">
       </div>
       <div class="track-status">${statusLabel}${t.status === 'running' ? ` ${pct}%` : ''}</div>
       <div class="track-bar"><span style="width:${pct}%"></span></div>
       ${t.error ? `<div class="track-error">${escapeHtml(t.error)}</div>` : ''}
       ${authHint}
       ${t.warning ? `<div class="track-warning">${escapeHtml(t.warning)}</div>` : ''}
-      <div class="track-actions">${baseActions}${editBtn}
-        <button class="text-button" data-action="save-tags" data-track="${escapeAttr(t.id)}" hidden>Save</button>
-        <button class="text-button" data-action="cancel-edit" data-track="${escapeAttr(t.id)}" hidden>Cancel</button>
-      </div>
+      <div class="track-actions">${baseActions}</div>
     </div>`;
       })
       .join('');
@@ -3528,52 +3519,6 @@ ui.modalBody.addEventListener('click', async (event) => {
       });
       toast(`Retrying ${result.retried} track${result.retried === 1 ? '' : 's'}.`);
       await refresh();
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  }
-  if (btn.dataset.action === 'edit-tags') {
-    const row = btn.closest('.track-detail');
-    row.querySelectorAll('[data-field]').forEach((el) => (el.hidden = true));
-    row.querySelectorAll('[data-edit]').forEach((el) => (el.hidden = false));
-    btn.hidden = true;
-    row.querySelector('[data-action="save-tags"]').hidden = false;
-    row.querySelector('[data-action="cancel-edit"]').hidden = false;
-  }
-  if (btn.dataset.action === 'cancel-edit') {
-    const row = btn.closest('.track-detail');
-    row.querySelectorAll('[data-field]').forEach((el) => (el.hidden = false));
-    row.querySelectorAll('[data-edit]').forEach((el) => (el.hidden = true));
-    btn.hidden = true;
-    row.querySelector('[data-action="save-tags"]').hidden = true;
-    row.querySelector('[data-action="edit-tags"]').hidden = false;
-  }
-  if (btn.dataset.action === 'save-tags') {
-    const row = btn.closest('.track-detail');
-    const titleInput = row.querySelector('[data-edit="title"]');
-    const artistInput = row.querySelector('[data-edit="artist"]');
-    const tags = { title: titleInput.value, artist: artistInput.value };
-    try {
-      if (cloud.mode === 'cloud') {
-        await api(`/api/jobs/${job.id}/tracks/${track.id}/tags`, {
-          method: 'POST',
-          body: JSON.stringify({ tags })
-        });
-      } else {
-        await api('/api/tags/edit', {
-          method: 'POST',
-          body: JSON.stringify({ file: track.file, tags })
-        });
-      }
-      row.querySelector('[data-field="title"]').textContent = titleInput.value;
-      row.querySelector('[data-field="artist"]').textContent =
-        `${artistInput.value}, #${String(track.index).padStart(2, '0')}`;
-      row.querySelectorAll('[data-field]').forEach((el) => (el.hidden = false));
-      row.querySelectorAll('[data-edit]').forEach((el) => (el.hidden = true));
-      btn.hidden = true;
-      row.querySelector('[data-action="cancel-edit"]').hidden = true;
-      row.querySelector('[data-action="edit-tags"]').hidden = false;
-      toast('Tags saved.');
     } catch (err) {
       toast(err.message, 'error');
     }
