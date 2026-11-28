@@ -2114,6 +2114,39 @@ button { cursor: pointer; }
   .save-row[data-kind] .folder-button { min-width: 92px; }
 }
 
+/* Library chips: MP3/Video type and, once saved, the device folder it went to. */
+.tile-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.tile-type,
+.tile-saved-folder,
+.type-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile-type {
+  border: 1px solid color-mix(in srgb, var(--signal) 40%, var(--hairline));
+  color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 10%, transparent);
+}
+.tile-saved-folder {
+  border: 1px solid color-mix(in srgb, var(--success) 40%, var(--hairline));
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+.type-tag {
+  border: 1px solid var(--hairline-soft);
+  color: var(--muted);
+  background: var(--paper);
+}
+
 /* Class display rules otherwise beat the UA [hidden] rule (e.g. the icon chip
    and the folder button), leaving "hidden" elements visible. */
 [hidden] { display: none !important; }

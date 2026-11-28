@@ -237,9 +237,14 @@ function writeLocal(key, value) {
 }
 
 const SAVED_PREFIX = 'snagly-saved:';
+const SAVED_FOLDER_PREFIX = 'snagly-saved-folder:';
 
 function savedKey(trackId) {
   return `${SAVED_PREFIX}${trackId}`;
+}
+
+function savedFolderKey(trackId) {
+  return `${SAVED_FOLDER_PREFIX}${trackId}`;
 }
 
 function isSaved(trackId) {
@@ -251,16 +256,38 @@ function isSaved(trackId) {
   }
 }
 
-function markSaved(trackId, value = true) {
+// Remember which device folder a file went to so the library can say where it
+// landed. Older saved markers have no folder name and simply say "device".
+function savedFolder(trackId) {
+  try {
+    return localStorage.getItem(savedFolderKey(trackId)) || '';
+  } catch {
+    return '';
+  }
+}
+
+function savedFolderNames(job) {
+  const names = new Set();
+  for (const track of job?.tracks || []) {
+    if (track.status !== 'done' || !isSaved(track.id)) continue;
+    const name = savedFolder(track.id);
+    if (name) names.add(name);
+  }
+  return [...names];
+}
+
+function markSaved(trackId, value = true, folderName = '') {
   if (value) {
     saveState.saved.add(trackId);
     try {
       localStorage.setItem(savedKey(trackId), '1');
+      if (folderName) localStorage.setItem(savedFolderKey(trackId), folderName);
     } catch {}
   } else {
     saveState.saved.delete(trackId);
     try {
       localStorage.removeItem(savedKey(trackId));
+      localStorage.removeItem(savedFolderKey(trackId));
     } catch {}
   }
 }
@@ -729,7 +756,7 @@ async function saveTrack(job, track, { force = false, batch = false, interactive
         await writable.close();
       }
       writable = null;
-      markSaved(track.id);
+      markSaved(track.id, true, target.name);
       target.needsPermission = false;
       return true;
     } catch (err) {
@@ -1325,7 +1352,9 @@ function deliveryState(job) {
   if (jobExpired(job)) return { badge: 'Expired', badgeClass: 'expired', saved, doneTracks };
   if (cloud.mode === 'cloud') {
     if (doneTracks.length && saved === doneTracks.length) {
-      return { badge: 'Saved to device', badgeClass: 'saved', saved, doneTracks };
+      const folders = savedFolderNames(job);
+      const badge = folders.length === 1 ? `Saved to ${folders[0]}` : 'Saved to device';
+      return { badge, badgeClass: 'saved', saved, doneTracks };
     }
     if (saved)
       return { badge: `Saved ${saved}/${doneTracks.length}`, badgeClass: 'saved', saved, doneTracks };
@@ -1355,7 +1384,14 @@ function tileMetaText(job) {
   }
   if (cloud.mode === 'cloud') {
     if (saved) {
-      return `${job.trackCount} track${job.trackCount === 1 ? '' : 's'}, ${saved} saved to this device`;
+      const folders = savedFolderNames(job);
+      const where =
+        folders.length === 1
+          ? ` in ${folders[0]}`
+          : folders.length > 1
+            ? ` in ${folders.length} folders`
+            : ' to this device';
+      return `${job.trackCount} track${job.trackCount === 1 ? '' : 's'}, ${saved} saved${where}`;
     }
     const expiry = expiryText(job);
     return `${job.trackCount} track${job.trackCount === 1 ? '' : 's'}, ready to save${expiry ? `, ${expiry}` : ''}`;
@@ -1419,6 +1455,10 @@ function renderLibrary() {
         </button>
         <div class="tile-info">
           <div class="tile-meta"><span class="status-dot"></span><span class="tile-count"></span></div>
+          <div class="tile-tags">
+            <span class="tile-type" hidden></span>
+            <span class="tile-saved-folder" hidden></span>
+          </div>
           <div class="tile-actions">
             <button type="button" data-action="open">Open folder</button>
             <button type="button" data-action="zip" hidden>Download ZIP</button>
@@ -1497,6 +1537,20 @@ function renderLibrary() {
     badge.textContent = state.badge;
     badge.className = `tile-badge ${state.badgeClass}`.trim();
     badge.hidden = false;
+
+    const typeChip = tile.querySelector('.tile-type');
+    typeChip.textContent = job.isVideo ? 'Video' : 'MP3';
+    typeChip.hidden = false;
+
+    const folderChip = tile.querySelector('.tile-saved-folder');
+    const folders = savedFolderNames(job);
+    if (cloud.mode === 'cloud' && folders.length) {
+      folderChip.textContent =
+        folders.length === 1 ? `Saved to ${folders[0]}` : `Saved to ${folders.length} folders`;
+      folderChip.hidden = false;
+    } else {
+      folderChip.hidden = true;
+    }
 
     const retryButton = tile.querySelector('[data-action="retry"]');
     const retryable = (job.failed || 0) + (job.cancelled || 0) + (job.missing || 0);
@@ -1625,10 +1679,18 @@ function openTrackModal(jobId) {
   const missing = job.tracks.filter((t) => t.status === 'missing').length;
   const saved = job.tracks.filter((t) => t.status === 'done' && isSaved(t.id)).length;
   const expired = jobExpired(job);
+  const modalFolders = savedFolderNames(job);
+  const modalFolderText =
+    modalFolders.length === 1
+      ? `Saved to ${escapeHtml(modalFolders[0])}`
+      : modalFolders.length > 1
+        ? `Saved to ${modalFolders.length} folders`
+        : `${saved} on this device`;
   ui.modalMeta.innerHTML = `
+    <span class="type-tag">${job.isVideo ? 'Video' : 'MP3'}</span>
     <span>${job.trackCount} ${job.isVideo ? 'video' : 'track'}${job.trackCount === 1 ? '' : 's'}</span>
     <span style="color:var(--success)">${done} ready</span>
-    ${cloud.mode === 'cloud' && saved ? `<span style="color:var(--success)">${saved} on this device</span>` : ''}
+    ${cloud.mode === 'cloud' && saved ? `<span style="color:var(--success)">${modalFolderText}</span>` : ''}
     ${failed ? `<span style="color:var(--danger)">${failed} failed</span>` : ''}
     ${cancelled ? `<span style="color:var(--muted)">${cancelled} cancelled</span>` : ''}
     ${missing ? `<span style="color:var(--danger)">${missing} missing</span>` : ''}
@@ -1675,7 +1737,7 @@ function openTrackModal(jobId) {
             : '';
         const delivery =
           cloud.mode === 'cloud' && t.status === 'done'
-            ? `<span class="track-delivery ${trackSaved ? 'is-saved' : ''}">${trackSaved ? 'Saved to this device' : 'Ready to save'}</span>`
+            ? `<span class="track-delivery ${trackSaved ? 'is-saved' : ''}">${trackSaved ? `Saved to ${escapeHtml(savedFolder(t.id)) || 'this device'}` : 'Ready to save'}</span>`
             : '';
         const authHint =
           t.error && isAuthError(t.error)
@@ -1935,7 +1997,9 @@ ui.resetSaved.addEventListener('click', async () => {
   if (!confirmed) return;
   try {
     for (const key of Object.keys(localStorage)) {
-      if (key.startsWith(SAVED_PREFIX)) localStorage.removeItem(key);
+      if (key.startsWith(SAVED_PREFIX) || key.startsWith(SAVED_FOLDER_PREFIX)) {
+        localStorage.removeItem(key);
+      }
     }
   } catch {}
   saveState.saved.clear();
