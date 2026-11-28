@@ -20,7 +20,30 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8'
 };
 
-function createStatic({ webDir, security }) {
+function firstHeader(value) {
+  return String(value || '')
+    .split(',')[0]
+    .trim();
+}
+
+// Social crawlers need absolute OG URLs. The HTML carries a token so one build
+// works behind localhost, a Cloudflare tunnel or any self-hosted domain.
+function requestOrigin(req, publicOrigin, trustProxy) {
+  if (publicOrigin) return publicOrigin;
+  const forwardedHost = trustProxy ? firstHeader(req.headers['x-forwarded-host']) : '';
+  const host = forwardedHost || firstHeader(req.headers.host);
+  if (!host) return '';
+  const forwardedProto = trustProxy ? firstHeader(req.headers['x-forwarded-proto']).toLowerCase() : '';
+  const proto =
+    forwardedProto === 'https' || forwardedProto === 'http'
+      ? forwardedProto
+      : req.socket.encrypted
+        ? 'https'
+        : 'http';
+  return `${proto}://${host}`;
+}
+
+function createStatic({ webDir, security, publicOrigin = '', trustProxy = true }) {
   return function serveStatic(req, res, pathname) {
     if (req.method !== 'GET' && req.method !== 'HEAD') return false;
     let decoded;
@@ -46,14 +69,29 @@ function createStatic({ webDir, security }) {
     const ext = path.extname(file).toLowerCase();
     const type = MIME[ext];
     if (!type) return false;
+    let body = null;
+    let size = stat.size;
+    if (ext === '.html') {
+      try {
+        body = Buffer.from(
+          fs
+            .readFileSync(file, 'utf8')
+            .replaceAll('__SNAGLY_PUBLIC_ORIGIN__', requestOrigin(req, publicOrigin, trustProxy))
+        );
+      } catch {
+        return false;
+      }
+      size = body.length;
+    }
     security.headers(res);
     res.writeHead(200, {
       'Content-Type': type,
-      'Content-Length': stat.size,
+      'Content-Length': size,
       'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=3600',
       'Last-Modified': stat.mtime.toUTCString()
     });
     if (req.method === 'HEAD') return res.end();
+    if (body) return res.end(body);
     const stream = fs.createReadStream(file);
     stream.on('error', () => {
       try {

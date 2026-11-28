@@ -63,6 +63,49 @@ test('session bootstrap, static assets and security headers', async (t) => {
   assert.ok(boot.data.csrfToken.length > 20);
 });
 
+test('social preview metadata uses an absolute public origin', async (t) => {
+  const server = await startTestServer({ SNAGLY_PUBLIC_ORIGIN: 'https://snagly.example.com' });
+  t.after(() => server.close());
+
+  const home = await fetch(`${server.base}/`);
+  assert.equal(home.status, 200);
+  const html = await home.text();
+  assert.match(
+    html,
+    /property="og:image" content="https:\/\/snagly\.example\.com\/assets\/social-preview\.png"/
+  );
+  assert.match(html, /name="twitter:card" content="summary_large_image"/);
+  assert.doesNotMatch(html, /__SNAGLY_PUBLIC_ORIGIN__/);
+
+  const privacy = await fetch(`${server.base}/privacy`);
+  assert.equal(privacy.status, 200);
+  const privacyHtml = await privacy.text();
+  assert.match(privacyHtml, /property="og:url" content="https:\/\/snagly\.example\.com\/privacy"/);
+  assert.doesNotMatch(privacyHtml, /__SNAGLY_PUBLIC_ORIGIN__/);
+
+  const image = await fetch(`${server.base}/assets/social-preview.png`);
+  assert.equal(image.status, 200);
+  assert.equal(image.headers.get('content-type'), 'image/png');
+  const bytes = Buffer.from(await image.arrayBuffer());
+  assert.equal(bytes.subarray(1, 4).toString('ascii'), 'PNG');
+});
+
+test('social preview falls back to the forwarded request origin', async (t) => {
+  const server = await startTestServer();
+  t.after(() => server.close());
+
+  const home = await fetch(`${server.base}/`, {
+    headers: { 'x-forwarded-host': 'snagly.example.net', 'x-forwarded-proto': 'https' }
+  });
+  assert.equal(home.status, 200);
+  const html = await home.text();
+  assert.match(
+    html,
+    /property="og:image" content="https:\/\/snagly\.example\.net\/assets\/social-preview\.png"/
+  );
+  assert.doesNotMatch(html, /__SNAGLY_PUBLIC_ORIGIN__/);
+});
+
 test('end-to-end mocked job, signed file delivery and ZIP archive', async (t) => {
   const server = await startTestServer();
   t.after(() => server.close());

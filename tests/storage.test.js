@@ -150,7 +150,9 @@ test('signed download tokens reject tampering and expiry', async () => {
   const token = signer.sign({ u: 'usr_1', j: 'job_1', t: 'trk_1' }, 1000);
   assert.deepEqual(signer.verify(token).t, 'trk_1');
   assert.equal(signer.verify(`${token}x`), null);
-  const tampered = `${token.slice(0, -1)}${token.endsWith('a') ? 'b' : 'a'}`;
+  // Flip a character well inside the token: the final base64url character can
+  // carry padding bits, so changing it does not always change the signature.
+  const tampered = `${token.slice(0, 10)}${token[10] === 'A' ? 'B' : 'A'}${token.slice(11)}`;
   assert.equal(signer.verify(tampered), null);
   const short = signer.sign({ u: 'usr_1' }, 5);
   await new Promise((resolve) => setTimeout(resolve, 20));

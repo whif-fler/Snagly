@@ -120,6 +120,13 @@ SNAGLY_RETENTION_HOURS=24
 Do not put the secret in Git, shell history, chat or screenshots. `.env` is
 gitignored and mode `600`.
 
+`SNAGLY_PUBLIC_ORIGIN` is also what shared links advertise: the HTML carries an
+`__SNAGLY_PUBLIC_ORIGIN__` placeholder that the server swaps for this value in
+the Open Graph and Twitter card tags, so previews point at
+`https://<your-domain>/assets/social-preview.png`. Without it the server falls
+back to the forwarded request host, which works behind Cloudflare Tunnel but is
+less reliable for crawlers.
+
 ## 6. Build and start
 
 ```bash

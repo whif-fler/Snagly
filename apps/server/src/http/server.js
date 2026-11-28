@@ -21,7 +21,12 @@ function createHttpServer(app) {
   const { config, logger, db, files, tools, signer, hub, jobs } = app;
   const security = createSecurity({ config });
   const sessions = createSessionRoutes({ db, config, security, jobs });
-  const serveStatic = createStatic({ webDir: config.webDir, security });
+  const serveStatic = createStatic({
+    webDir: config.webDir,
+    security,
+    publicOrigin: config.publicOrigin,
+    trustProxy: config.trustProxy
+  });
 
   const server = http.createServer(async (req, res) => {
     security.headers(res);

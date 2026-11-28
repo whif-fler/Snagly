@@ -250,6 +250,20 @@ function youtubeLinks(values) {
   return { urls, invalid };
 }
 
+// Social crawlers need absolute OG URLs. The HTML carries a token so one build
+// works behind localhost, a Cloudflare tunnel or any self-hosted domain.
+function requestOrigin(req) {
+  const host = String(req.headers.host || '').trim();
+  if (!host) return '';
+  const forwarded = String(req.headers['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const proto =
+    forwarded === 'https' || forwarded === 'http' ? forwarded : req.socket.encrypted ? 'https' : 'http';
+  return `${proto}://${host}`;
+}
+
 function serveStatic(req, res, pathname) {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     return sendJson(res, 405, { error: 'Method not allowed' });
@@ -273,14 +287,18 @@ function serveStatic(req, res, pathname) {
 
   fs.readFile(filePath, (err, data) => {
     if (err) return sendJson(res, 404, { error: 'Not found' });
+    const type = MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+    const body = type.startsWith('text/html')
+      ? Buffer.from(data.toString('utf8').replaceAll('__SNAGLY_PUBLIC_ORIGIN__', requestOrigin(req)))
+      : data;
     securityHeaders(res);
     res.writeHead(200, {
-      'Content-Type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
-      'Content-Length': data.length,
+      'Content-Type': type,
+      'Content-Length': body.length,
       'Cache-Control': relative.startsWith('assets/') ? 'public, max-age=3600' : 'no-cache'
     });
     if (req.method === 'HEAD') return res.end();
-    res.end(data);
+    res.end(body);
   });
 }
 
