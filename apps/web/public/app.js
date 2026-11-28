@@ -488,6 +488,18 @@ function savedTrackCount(job) {
   return (job?.tracks || []).filter((t) => t.status === 'done' && isSaved(t.id)).length;
 }
 
+// Cloud browsers get a ZIP for multi-track jobs. A single track is delivered
+// as the real file instead — no ZIP wrapper, no folder picker step.
+function singleTrackDownload(job) {
+  if (!job || job.trackCount > 1 || job.tracks?.length !== 1) return null;
+  const track = job.tracks[0];
+  return track?.status === 'done' && track.downloadUrl ? track : null;
+}
+
+function jobDownloadUrl(job) {
+  return singleTrackDownload(job)?.downloadUrl || job?.archiveUrl || null;
+}
+
 function pendingSaveCount() {
   let count = 0;
   for (const job of jobs) {
@@ -622,7 +634,8 @@ async function saveJob(job, { force = false } = {}) {
   if (!saveState.handle) {
     await chooseSaveDir();
     if (!saveState.handle) {
-      if (job.archiveUrl) window.location.assign(job.archiveUrl);
+      const url = jobDownloadUrl(job);
+      if (url) window.location.assign(url);
       return;
     }
   }
@@ -660,8 +673,14 @@ function downloadOrSaveJob(job, { force = false } = {}) {
     toast('That server copy has expired. Download it again to make a new copy.', 'error');
     return;
   }
+  const single = singleTrackDownload(job);
+  if (single) {
+    window.location.assign(single.downloadUrl);
+    return;
+  }
   if (supportsDirectoryPicker) return saveJob(job, { force });
-  if (job.archiveUrl) window.location.assign(job.archiveUrl);
+  const url = jobDownloadUrl(job);
+  if (url) window.location.assign(url);
   else toast('Nothing is ready to download yet.', 'error');
 }
 
@@ -1276,6 +1295,9 @@ function renderLibrary() {
       if (expired) {
         openButton.textContent = 'Download again';
         openButton.disabled = false;
+      } else if (singleTrackDownload(job)) {
+        openButton.textContent = 'Download file';
+        openButton.disabled = false;
       } else if (supportsDirectoryPicker) {
         const allSaved = doneTracks.length > 0 && saved === doneTracks.length;
         openButton.textContent = allSaved
@@ -1286,7 +1308,7 @@ function renderLibrary() {
         openButton.disabled = doneTracks.length === 0;
       } else {
         openButton.textContent = 'Download ZIP';
-        openButton.disabled = !job.archiveUrl;
+        openButton.disabled = !jobDownloadUrl(job);
       }
       zipButton.hidden = !supportsDirectoryPicker || !job.archiveUrl || expired;
       zipButton.disabled = !job.archiveUrl || expired;
@@ -1469,6 +1491,9 @@ function openTrackModal(jobId) {
     if (expired) {
       ui.modalOpenFolder.textContent = 'Download again';
       ui.modalOpenFolder.hidden = false;
+    } else if (singleTrackDownload(job)) {
+      ui.modalOpenFolder.textContent = 'Download file';
+      ui.modalOpenFolder.hidden = false;
     } else if (supportsDirectoryPicker) {
       ui.modalOpenFolder.textContent =
         saved && saved === done ? 'Save again to folder' : 'Save all to folder';
@@ -1476,7 +1501,7 @@ function openTrackModal(jobId) {
       ui.modalZip.hidden = !job.archiveUrl;
     } else {
       ui.modalOpenFolder.textContent = 'Download ZIP';
-      ui.modalOpenFolder.hidden = !job.archiveUrl;
+      ui.modalOpenFolder.hidden = !jobDownloadUrl(job);
     }
   } else {
     ui.modalOpenFolder.textContent = 'Open folder';
