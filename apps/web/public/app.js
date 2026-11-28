@@ -141,6 +141,9 @@ const ui = {
 };
 
 let status = { workers: 5, paused: false, root: '', isVideo: false, tools: {} };
+// Once the user toggles MP3/Video in this tab, that choice wins over the
+// server's copy. Otherwise the 3s refresh can flip the folder row back.
+let modeLocalOverride = false;
 let jobs = [];
 let previewData = null;
 let previewSeq = 0;
@@ -200,6 +203,12 @@ function targetForJob(job) {
 
 function folderLabel(kind) {
   return kind === 'video' ? 'Video' : 'Music';
+}
+
+// The visible toggle is the safest source for the composer destination; server
+// state can lag a click by a refresh cycle.
+function currentKind() {
+  return ui.modeVideo?.classList.contains('active') ? 'video' : 'audio';
 }
 
 const AUTO_SAVE_KEY = 'snagly-autosave';
@@ -983,7 +992,7 @@ function destinationState(kind) {
 function renderDestination() {
   if (cloud.mode !== 'cloud') return;
   // The composer shows one destination: the one matching the current mode.
-  const kind = status.isVideo ? 'video' : 'audio';
+  const kind = currentKind();
   const target = saveTarget(kind);
   const state = destinationState(kind);
   ui.saveRow.dataset.kind = kind;
@@ -2413,6 +2422,7 @@ function scheduleRender() {
   renderQueued = true;
   requestAnimationFrame(() => {
     renderQueued = false;
+    if (!modeLocalOverride) applyMode();
     renderSettings();
     renderActivity();
     renderLibrary();
@@ -2426,7 +2436,8 @@ async function refresh() {
   try {
     const data = await api('/api/jobs');
     jobs = data.jobs || [];
-    status = data.status || status;
+    const nextStatus = data.status || status;
+    status = modeLocalOverride ? { ...nextStatus, isVideo: status.isVideo } : nextStatus;
     scheduleRender();
   } catch (err) {
     toast(`Could not reach Snagly: ${err.message}`, 'error');
@@ -2450,7 +2461,7 @@ function connectEvents() {
         workers: payload.workers,
         active: payload.active,
         penaltyMs: payload.penaltyMs,
-        isVideo: payload.isVideo
+        isVideo: modeLocalOverride ? status.isVideo : payload.isVideo
       };
       scheduleRender();
       if (payload.libraryRemoved) {
@@ -2754,7 +2765,7 @@ ui.urls.addEventListener('drop', addDroppedLinks);
 
 ui.browse.addEventListener('click', async () => {
   if (cloud.mode === 'cloud') {
-    const kind = status.isVideo ? 'video' : 'audio';
+    const kind = currentKind();
     ui.browse.disabled = true;
     try {
       if (saveTarget(kind).needsPermission) await reconnectSaveDir(kind);
@@ -3457,6 +3468,7 @@ function applyMode() {
 }
 
 function setMode(isVideo) {
+  modeLocalOverride = true;
   status.isVideo = isVideo;
   applyMode();
   // Save preference in background; don't block the UI toggle
