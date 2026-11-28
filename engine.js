@@ -297,6 +297,21 @@ function discoverTools() {
     }
   } catch { /* handled by status endpoint */ }
 
+  // Non-Windows (or a missing WinGet install): fall back to PATH lookups.
+  if (!yt || !ffmpeg || !ffprobe) {
+    const which = name => {
+      try {
+        const cmd = process.platform === 'win32' ? 'where' : 'sh';
+        const args = process.platform === 'win32' ? [name] : ['-c', `command -v ${name}`];
+        const out = execFileSync(cmd, args, { encoding: 'utf8' }).trim();
+        return out.split(/\r?\n/)[0] || '';
+      } catch { return ''; }
+    };
+    if (!yt) yt = which('yt-dlp');
+    if (!ffmpeg) ffmpeg = which('ffmpeg');
+    if (!ffprobe) ffprobe = which('ffprobe');
+  }
+
   const browsers = [
     ['chrome', path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'User Data')],
     ['edge', path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'Edge', 'User Data')],
