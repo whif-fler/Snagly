@@ -101,8 +101,11 @@ cross-site` is rejected.
 
 ### Output and browser hardening
 
-- CSP: `default-src 'self'`, no inline scripts, no frames, no third-party
-  connections, `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`.
+- CSP: `default-src 'self'`, no inline scripts, no frames, and no third-party
+  sources except the Cloudflare Web Analytics beacon
+  (`script-src https://static.cloudflareinsights.com`,
+  `connect-src https://cloudflareinsights.com`). `object-src 'none'`,
+  `base-uri 'none'`, `form-action 'none'`.
 - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: no-referrer`, COOP/CORP same-origin, restrictive
   `Permissions-Policy`, and HSTS when secure cookies are enabled.
