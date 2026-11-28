@@ -3858,7 +3858,8 @@ bootstrapped
     loadVideoFormats();
     return refresh();
   })
-  .then(() => {
+  .then(async () => {
+    await bootstrapped;
     applyMode();
     if (cloud.mode === 'cloud') loadSaveHandle();
     connectEvents();
