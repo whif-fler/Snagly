@@ -1485,6 +1485,8 @@ function renderLibrary() {
     const filtering = searching || filter !== 'all';
     if (filtering) {
       const copy = {
+        mp3: ['No MP3 downloads', 'Downloads saved as MP3 appear here.'],
+        video: ['No video downloads', 'Downloads saved as video appear here.'],
         saved: [
           'Nothing saved yet',
           'Choose a folder in the composer, then use Save on a finished download. Saved files stay on your device.'
@@ -1644,7 +1646,9 @@ function filteredJobs() {
   const q = ui.librarySearch.value.trim().toLowerCase();
   const f = ui.libraryFilter.value;
   if (q) list = list.filter((j) => j.title.toLowerCase().includes(q));
-  if (f === 'server') list = list.filter((j) => !jobExpired(j) && j.done > 0);
+  if (f === 'mp3') list = list.filter((j) => !j.isVideo);
+  else if (f === 'video') list = list.filter((j) => j.isVideo);
+  else if (f === 'server') list = list.filter((j) => !jobExpired(j) && j.done > 0);
   else if (f === 'saved') list = list.filter((j) => savedTrackCount(j) > 0);
   else if (f === 'expired') list = list.filter((j) => jobExpired(j));
   else if (f === 'running') list = list.filter((j) => j.status === 'running' || j.status === 'queued');
