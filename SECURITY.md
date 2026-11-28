@@ -201,8 +201,8 @@ limitations below are design constraints, not hidden defects.
    and data. Keep the image and yt-dlp pinned/updated; do not run untrusted
    plug-ins.
 5. **YouTube blocking.** The server's IP may be challenged or rate-limited.
-   Cloud mode deliberately does not use personal cookies; availability is not
-   guaranteed.
+   Cloud mode may use one operator-managed cookie file; visitors never supply
+   cookies, and availability is not guaranteed.
 6. **Single-instance SQLite.** Multiple replicas would break queue and cleanup
    assumptions. Do not scale horizontally.
 7. **Browser capability.** Folder saving requires the File System Access API

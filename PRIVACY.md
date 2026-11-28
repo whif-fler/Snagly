@@ -28,8 +28,9 @@ either mode.
 - The server stores your job metadata and downloaded files for a limited time
   (24 hours by default) so you can save them to your device.
 - The server operator can read everything stored on the server.
-- The server fetches YouTube pages and thumbnails using its own IP address. Your
-  personal YouTube cookies are never used.
+- The server fetches YouTube pages and thumbnails using its own IP address. It
+  may use one shared, operator-managed YouTube session to reach public videos;
+  your own YouTube cookies are never read, uploaded or used.
 - Cloudflare (or your reverse proxy) and the hosting provider process network
   metadata such as IP addresses.
 

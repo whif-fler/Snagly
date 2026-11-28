@@ -1264,7 +1264,7 @@ function renderSettingsDialog() {
     ? 'Guest access uses the server’s own requests. No Google account is connected.'
     : 'Guest access uses this computer’s own requests. No Google account is connected.';
   ui.youtubeNote.textContent =
-    'Snagly does not use YouTube cookies, ask for a Google password or use Google OAuth. Age-restricted, private, members-only and bot-checked videos may fail.';
+    'Snagly never asks for your Google password or OAuth. A shared server session may be used; your own YouTube cookies are never read. Age-restricted, private or bot-checked videos may still fail.';
 
   for (const button of document.querySelectorAll('[data-format-choice]')) {
     button.setAttribute(

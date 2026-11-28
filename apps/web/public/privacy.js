@@ -36,7 +36,7 @@
     if (retention) retention.textContent = hoursText;
     const summary = document.getElementById('policySummary');
     if (summary) {
-      summary.innerHTML = `<ul><li>Anonymous session; no account or password.</li><li>Jobs and files are deleted after ${hoursText}.</li><li>The operator can access stored data.</li><li>Personal YouTube cookies are never used.</li></ul>`;
+      summary.innerHTML = `<ul><li>Anonymous session; no account or password.</li><li>Jobs and files are deleted after ${hoursText}.</li><li>The operator can access stored data.</li><li>Your own YouTube cookies are never read or uploaded.</li></ul>`;
     }
   } catch {
     // Static hosting or the local app: the local policy is correct.

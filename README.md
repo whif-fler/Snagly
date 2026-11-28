@@ -35,7 +35,8 @@ interface and now ships in two forms:
   device.
 
 Both modes share validation, naming, storage and download logic from `packages/`.
-Both are guest-only: neither reads browser cookies or a `cookies.txt` export. The
+Both are guest-only: neither reads visitors' browser cookies. Cloud mode may use
+one operator-managed `cookies.txt` on the server; local mode never does. The
 cloud app also never accepts arbitrary server paths and never exposes one user's
 files to another.
 
