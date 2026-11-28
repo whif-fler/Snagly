@@ -847,7 +847,9 @@ function renderCloudSave() {
 function destinationState(kind) {
   const target = saveTarget(kind);
   const pending = pendingSaveCount(kind);
-  const pendingText = pending ? `${pending} finished ${kind === 'video' ? 'video' : 'track'}${pending === 1 ? '' : 's'} ready to save.` : '';
+  const pendingText = pending
+    ? `${pending} finished ${kind === 'video' ? 'video' : 'track'}${pending === 1 ? '' : 's'} ready to save.`
+    : '';
   if (!supportsDirectoryPicker) {
     return {
       value: 'Downloads folder',
@@ -858,7 +860,9 @@ function destinationState(kind) {
   if (!target.handle) {
     return {
       value: target.name || '',
-      text: pendingText || `Finished ${kind === 'video' ? 'videos' : 'tracks'} stay on the server until you choose a folder.`,
+      text:
+        pendingText ||
+        `Finished ${kind === 'video' ? 'videos' : 'tracks'} stay on the server until you choose a folder.`,
       kind: pending ? 'is-warning' : ''
     };
   }
@@ -872,13 +876,16 @@ function destinationState(kind) {
   if (!autoSaveEnabled) {
     return {
       value: target.name,
-      text: pendingText || `All finished ${kind === 'video' ? 'videos' : 'tracks'} are saved to “${target.name}”.`,
+      text:
+        pendingText ||
+        `All finished ${kind === 'video' ? 'videos' : 'tracks'} are saved to “${target.name}”.`,
       kind: pending ? '' : 'is-ok'
     };
   }
   return {
     value: target.name,
-    text: pendingText || `Auto-save is on. New ${kind === 'video' ? 'videos' : 'tracks'} go to “${target.name}”.`,
+    text:
+      pendingText || `Auto-save is on. New ${kind === 'video' ? 'videos' : 'tracks'} go to “${target.name}”.`,
     kind: 'is-ok'
   };
 }
