@@ -1986,10 +1986,11 @@ button { cursor: pointer; }
 /* One destination row that follows the selected Music/Video mode. Keep the
    composer's original separator and spacing; only the icon and label change. */
 .save-row[data-kind] {
-  grid-template-columns: minmax(118px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(112px, auto) minmax(0, 1fr) auto;
   align-items: center;
 }
 .save-row[data-kind] label {
+  grid-column: auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1997,6 +1998,7 @@ button { cursor: pointer; }
   color: var(--ink);
   font-weight: 600;
 }
+.save-row[data-kind] .save-control { align-self: center; }
 .destination-icon {
   display: inline-grid;
   place-items: center;
@@ -2019,13 +2021,16 @@ button { cursor: pointer; }
 .settings-label .destination-icon {
   width: 20px;
   height: 20px;
-  margin-right: 2px;
+  margin-right: 4px;
   font-size: 11px;
-  vertical-align: -4px;
+  vertical-align: middle;
   color: var(--muted);
   background: color-mix(in srgb, var(--muted) 12%, transparent);
 }
+.save-row[data-kind] .folder-button,
 .folder-button {
+  grid-column: auto;
+  width: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2051,4 +2056,8 @@ button { cursor: pointer; }
   .save-row[data-kind] label { grid-column: 1 / -1; }
   .save-row[data-kind] .folder-button { min-width: 92px; }
 }
+
+/* Class display rules otherwise beat the UA [hidden] rule (e.g. the icon chip
+   and the folder button), leaving "hidden" elements visible. */
+[hidden] { display: none !important; }
 
