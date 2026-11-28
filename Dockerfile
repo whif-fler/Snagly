@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Multi-stage image: no build tools or npm caches in the runtime layer.
-FROM node:24-bookworm-slim AS deps
+FROM node:26-bookworm-slim AS deps
 
 WORKDIR /app
 ENV NODE_ENV=production
@@ -22,7 +22,7 @@ COPY packages/storage/package.json packages/storage/package.json
 # and installs workspace links if any are added later.
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
-FROM node:24-bookworm-slim AS tools
+FROM node:26-bookworm-slim AS tools
 
 ARG YTDLP_VERSION=2026.11.23
 ARG TARGETARCH
@@ -47,7 +47,7 @@ RUN set -eux; \
   install -m 0755 "/tmp/${asset}" /usr/local/bin/yt-dlp; \
   /usr/local/bin/yt-dlp --version
 
-FROM node:24-bookworm-slim AS runtime
+FROM node:26-bookworm-slim AS runtime
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates ffmpeg tini \
