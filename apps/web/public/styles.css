@@ -1983,3 +1983,73 @@ button { cursor: pointer; }
   .switch input:checked + .switch-track::after { transform: translateX(20px); }
 }
 
+/* Separate music and video destinations. The icons make the two rows
+   scannable, and the folder buttons stay visually quiet until a folder is
+   chosen, then pick up a subtle success tint. */
+.destination-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline-soft);
+}
+.save-row[data-kind] {
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  align-items: center;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.save-row[data-kind] label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+.destination-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.save-row[data-kind='audio'] .destination-icon {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+}
+.save-row[data-kind='video'] .destination-icon {
+  background: color-mix(in srgb, var(--signal) 16%, transparent);
+  color: var(--signal);
+}
+.folder-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 104px;
+  font-weight: 600;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+.folder-button:hover {
+  background: color-mix(in srgb, var(--signal) 8%, var(--paper));
+  border-color: var(--signal);
+}
+.folder-button.is-set {
+  border-color: color-mix(in srgb, var(--success) 45%, var(--hairline));
+  color: var(--success);
+}
+
+@media (max-width: 760px) {
+  .save-row[data-kind] { grid-template-columns: 112px minmax(0, 1fr) auto; }
+  .settings-actions .folder-button { flex: 1 1 140px; }
+}
+@media (max-width: 500px) {
+  .save-row[data-kind] { grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+  .save-row[data-kind] label { grid-column: 1 / -1; }
+  .save-row[data-kind] .folder-button { min-width: 92px; }
+}
+

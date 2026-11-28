@@ -75,13 +75,32 @@
           <span class="quality-hint" id="videoQualityHint">Video + audio, source quality</span>
         </div>
 
-        <div class="save-row">
+        <div class="save-row" id="saveRow">
           <label for="savePath">Save to</label>
           <div class="save-control">
             <input id="savePath" type="text" spellcheck="false" autocomplete="off" aria-describedby="destinationState">
             <span class="save-state" id="destinationState" role="status"></span>
           </div>
           <button class="quiet-button" id="browseButton" type="button">Browse</button>
+        </div>
+
+        <div class="destination-list" id="destinationRows" hidden>
+          <div class="save-row" data-kind="audio">
+            <label for="audioSavePath"><span class="destination-icon" aria-hidden="true">♪</span>Music</label>
+            <div class="save-control">
+              <input id="audioSavePath" type="text" readonly spellcheck="false" autocomplete="off" aria-describedby="audioDestinationState">
+              <span class="save-state" id="audioDestinationState" role="status"></span>
+            </div>
+            <button class="quiet-button folder-button" id="audioBrowseButton" type="button">Choose</button>
+          </div>
+          <div class="save-row" data-kind="video">
+            <label for="videoSavePath"><span class="destination-icon" aria-hidden="true">▶</span>Video</label>
+            <div class="save-control">
+              <input id="videoSavePath" type="text" readonly spellcheck="false" autocomplete="off" aria-describedby="videoDestinationState">
+              <span class="save-state" id="videoDestinationState" role="status"></span>
+            </div>
+            <button class="quiet-button folder-button" id="videoBrowseButton" type="button">Choose</button>
+          </div>
         </div>
 
         <div class="composer-footer">
@@ -341,18 +360,28 @@
                 <h3>Save finished files</h3>
                 <div class="settings-row settings-row-stack">
                   <div class="settings-row-copy">
-                    <span class="settings-label">This device</span>
-                    <span class="settings-help" id="settingsDestination">Choose a folder to save finished tracks.</span>
+                    <span class="settings-label">Music folder</span>
+                    <span class="settings-help" id="settingsAudioDestination">Choose where finished audio is saved.</span>
                   </div>
                   <div class="settings-actions">
-                    <button class="quiet-button" id="settingsChooseFolder" type="button">Choose folder</button>
-                    <button class="quiet-button" id="settingsForgetFolder" type="button" hidden>Forget folder</button>
+                    <button class="quiet-button folder-button" id="settingsAudioChoose" type="button">Choose folder</button>
+                    <button class="quiet-button" id="settingsAudioForget" type="button" hidden>Forget</button>
+                  </div>
+                </div>
+                <div class="settings-row settings-row-stack">
+                  <div class="settings-row-copy">
+                    <span class="settings-label">Video folder</span>
+                    <span class="settings-help" id="settingsVideoDestination">Choose where finished video is saved.</span>
+                  </div>
+                  <div class="settings-actions">
+                    <button class="quiet-button folder-button" id="settingsVideoChoose" type="button">Choose folder</button>
+                    <button class="quiet-button" id="settingsVideoForget" type="button" hidden>Forget</button>
                   </div>
                 </div>
                 <div class="settings-row">
                   <div class="settings-row-copy">
                     <span class="settings-label">Save automatically</span>
-                    <span class="settings-help">New finished tracks copy to the chosen folder without another click.</span>
+                    <span class="settings-help">New finished tracks copy to their matching folder without another click.</span>
                   </div>
                   <label class="switch">
                     <input type="checkbox" id="autoSaveToggle">

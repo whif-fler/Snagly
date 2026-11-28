@@ -6,8 +6,16 @@ const ui = {
   urls: $('urls'),
   download: $('downloadButton'),
   savePath: $('savePath'),
+  saveRow: $('saveRow'),
   browse: $('browseButton'),
   saveState: $('destinationState'),
+  destinationRows: $('destinationRows'),
+  audioPath: $('audioSavePath'),
+  audioBrowse: $('audioBrowseButton'),
+  audioState: $('audioDestinationState'),
+  videoPath: $('videoSavePath'),
+  videoBrowse: $('videoBrowseButton'),
+  videoState: $('videoDestinationState'),
   heroCopy: $('heroCopy'),
   footerNote: $('footerNote'),
   connectionButton: $('connectionButton'),
@@ -97,9 +105,12 @@ const ui = {
   settingsDone: $('settingsDone'),
   settingsMode: $('settingsMode'),
   settingsFootNote: $('settingsFootNote'),
-  settingsDestination: $('settingsDestination'),
-  settingsChooseFolder: $('settingsChooseFolder'),
-  settingsForgetFolder: $('settingsForgetFolder'),
+  settingsAudioDestination: $('settingsAudioDestination'),
+  settingsAudioChoose: $('settingsAudioChoose'),
+  settingsAudioForget: $('settingsAudioForget'),
+  settingsVideoDestination: $('settingsVideoDestination'),
+  settingsVideoChoose: $('settingsVideoChoose'),
+  settingsVideoForget: $('settingsVideoForget'),
   settingsLocalRoot: $('settingsLocalRoot'),
   settingsLocalBrowse: $('settingsLocalBrowse'),
   settingsLocalSave: $('settingsLocalSave'),
@@ -169,12 +180,30 @@ const cloud = {
 };
 
 const saveState = {
-  handle: null,
-  name: '',
-  needsPermission: false,
+  // Music and video can go to different folders on this device.
+  targets: {
+    audio: { handle: null, name: '', needsPermission: false },
+    video: { handle: null, name: '', needsPermission: false }
+  },
   saved: new Set(),
   saving: new Set()
 };
+
+function saveTarget(kind) {
+  return saveState.targets[kind === 'video' ? 'video' : 'audio'];
+}
+
+function kindForJob(job) {
+  return job?.isVideo ? 'video' : 'audio';
+}
+
+function targetForJob(job) {
+  return saveTarget(kindForJob(job));
+}
+
+function folderLabel(kind) {
+  return kind === 'video' ? 'Video' : 'Music';
+}
 
 const AUTO_SAVE_KEY = 'snagly-autosave';
 const NOTIFY_KEY = 'snagly-notify';
@@ -461,13 +490,29 @@ async function directoryPermission(handle, request = false) {
 
 async function loadSaveHandle() {
   if (!supportsDirectoryPicker) return;
-  const handle = await idbGet('save-dir');
-  if (!handle) return;
-  saveState.handle = handle;
-  saveState.name = handle.name || 'Selected folder';
-  saveState.needsPermission = !(await directoryPermission(handle, false));
+  let migrated = false;
+  for (const kind of ['audio', 'video']) {
+    let handle = await idbGet(`save-dir-${kind}`);
+    if (!handle) {
+      // Existing installs had one folder. Give both kinds that folder so
+      // behaviour stays the same until the user picks separate ones.
+      handle = await idbGet('save-dir');
+      if (handle) {
+        await idbSet(`save-dir-${kind}`, handle);
+        migrated = true;
+      }
+    }
+    if (!handle) continue;
+    const target = saveTarget(kind);
+    target.handle = handle;
+    target.name = handle.name || 'Selected folder';
+    target.needsPermission = !(await directoryPermission(handle, false));
+  }
+  if (migrated) await idbDelete('save-dir');
   renderCloudSave();
-  if (!saveState.needsPermission) autoSave();
+  if (['audio', 'video'].some((kind) => saveTarget(kind).handle && !saveTarget(kind).needsPermission)) {
+    autoSave();
+  }
 }
 
 function jobExpired(job) {
@@ -500,34 +545,36 @@ function jobDownloadUrl(job) {
   return singleTrackDownload(job)?.downloadUrl || job?.archiveUrl || null;
 }
 
-function pendingSaveCount() {
+function pendingSaveCount(kind = '') {
   let count = 0;
   for (const job of jobs) {
+    if (kind && kindForJob(job) !== kind) continue;
     if (jobExpired(job)) continue;
     count += job.tracks.filter((t) => t.status === 'done' && !isSaved(t.id)).length;
   }
   return count;
 }
 
-async function chooseSaveDir() {
+async function chooseSaveDir(kind = 'audio') {
   if (!supportsDirectoryPicker) {
-    toast('This browser cannot write to a folder. Use Download ZIP from the library.', 'error');
+    toast('This browser cannot write to folders. Use the download buttons in the library.', 'error');
     return;
   }
+  const target = saveTarget(kind);
   try {
-    const handle = await window.showDirectoryPicker({ id: 'snagly-saves', mode: 'readwrite' });
+    const handle = await window.showDirectoryPicker({ id: `snagly-saves-${kind}`, mode: 'readwrite' });
     if (!(await directoryPermission(handle, true))) {
-      saveState.needsPermission = true;
+      target.needsPermission = true;
       renderCloudSave();
       toast('Folder permission was not granted.', 'error');
       return;
     }
-    saveState.handle = handle;
-    saveState.name = handle.name || 'Selected folder';
-    saveState.needsPermission = false;
-    await idbSet('save-dir', handle);
+    target.handle = handle;
+    target.name = handle.name || 'Selected folder';
+    target.needsPermission = false;
+    await idbSet(`save-dir-${kind}`, handle);
     renderCloudSave();
-    toast(`Saving to ${saveState.name}.`);
+    toast(`${folderLabel(kind)} will save to ${target.name}.`);
     autoSave();
   } catch (err) {
     if (err?.name !== 'AbortError') toast(`Could not use that folder: ${err.message}`, 'error');
@@ -536,6 +583,8 @@ async function chooseSaveDir() {
 
 async function saveTrack(job, track, { force = false, batch = false } = {}) {
   if (!track?.downloadUrl && !track?.id) return false;
+  const kind = kindForJob(job);
+  const target = saveTarget(kind);
   if (jobExpired(job)) {
     if (!batch) {
       toast('That server copy has expired. Download it again to make a new copy.', 'error');
@@ -544,20 +593,20 @@ async function saveTrack(job, track, { force = false, batch = false } = {}) {
   }
   if (!isSaved(track.id) || force) {
     if (saveState.saving.has(track.id)) return false;
-    if (!saveState.handle) {
-      await chooseSaveDir();
-      if (!saveState.handle) return false;
+    if (!target.handle) {
+      await chooseSaveDir(kind);
+      if (!target.handle) return false;
     }
-    if (!(await directoryPermission(saveState.handle, true))) {
-      saveState.needsPermission = true;
+    if (!(await directoryPermission(target.handle, true))) {
+      target.needsPermission = true;
       renderCloudSave();
-      if (!batch) toast(`Reconnect ${saveState.name || 'the folder'} to save downloads.`, 'error');
+      if (!batch) toast(`Reconnect ${target.name || 'the folder'} to save downloads.`, 'error');
       return false;
     }
     saveState.saving.add(track.id);
     let writable = null;
     try {
-      let folder = saveState.handle;
+      let folder = target.handle;
       if (job.trackCount > 1) {
         const folderName = safeLocalName(job.folderName || job.title || 'Playlist', 'Playlist');
         folder = await folder.getDirectoryHandle(folderName, { create: true });
@@ -586,7 +635,7 @@ async function saveTrack(job, track, { force = false, batch = false } = {}) {
       else await writable.write(await res.arrayBuffer());
       writable = null;
       markSaved(track.id);
-      saveState.needsPermission = false;
+      target.needsPermission = false;
       return true;
     } catch (err) {
       if (writable) {
@@ -595,18 +644,19 @@ async function saveTrack(job, track, { force = false, batch = false } = {}) {
         } catch {}
       }
       if (err?.name === 'NotAllowedError') {
-        saveState.needsPermission = true;
+        target.needsPermission = true;
         renderCloudSave();
         if (!batch) {
           toast(
-            `Folder access expired for ${saveState.name || 'the selected folder'}. Reconnect it in Storage.`,
+            `Folder access expired for ${target.name || 'the selected folder'}. Reconnect it in Storage.`,
             'error'
           );
         }
       } else if (err?.name === 'NotFoundError') {
-        saveState.handle = null;
-        saveState.name = '';
-        saveState.needsPermission = false;
+        target.handle = null;
+        target.name = '';
+        target.needsPermission = false;
+        await idbDelete(`save-dir-${kind}`);
         renderCloudSave();
         if (!batch) toast('That folder is no longer available. Choose a folder again.', 'error');
       } else if (!batch) {
@@ -631,9 +681,10 @@ async function saveJob(job, { force = false } = {}) {
     toast('Nothing has finished downloading yet.');
     return;
   }
-  if (!saveState.handle) {
-    await chooseSaveDir();
-    if (!saveState.handle) {
+  const target = targetForJob(job);
+  if (!target.handle) {
+    await chooseSaveDir(kindForJob(job));
+    if (!target.handle) {
       const url = jobDownloadUrl(job);
       if (url) window.location.assign(url);
       return;
@@ -649,16 +700,16 @@ async function saveJob(job, { force = false } = {}) {
       failed++;
     }
   }
-  if (saved) toast(`Saved ${saved} file${saved === 1 ? '' : 's'} to ${saveState.name}.`);
+  if (saved) toast(`Saved ${saved} file${saved === 1 ? '' : 's'} to ${target.name}.`);
   else if (failed) {
     toast(
-      saveState.needsPermission
-        ? `Reconnect ${saveState.name || 'the folder'} to save downloads.`
-        : `Could not save those files to ${saveState.name}. Check the folder and try again.`,
+      target.needsPermission
+        ? `Reconnect ${target.name || 'the folder'} to save downloads.`
+        : `Could not save those files to ${target.name}. Check the folder and try again.`,
       'error'
     );
   } else if (done.length) {
-    toast(`Those files are already saved to ${saveState.name}.`);
+    toast(`Those files are already saved to ${target.name}.`);
   }
   lastFilmstripSig = '';
   renderLibrary();
@@ -739,26 +790,35 @@ let autoSaveTimer = null;
 let autoSaveRunning = false;
 function autoSave() {
   if (cloud.mode !== 'cloud' || !autoSaveEnabled) return;
-  if (!saveState.handle || saveState.needsPermission) return;
   if (autoSaveTimer || autoSaveRunning) return;
+  const ready = ['audio', 'video'].some((kind) => {
+    const target = saveTarget(kind);
+    return target.handle && !target.needsPermission;
+  });
+  if (!ready) return;
   autoSaveTimer = setTimeout(async () => {
     autoSaveTimer = null;
     autoSaveRunning = true;
     try {
-      if (!(await directoryPermission(saveState.handle, false))) {
-        saveState.needsPermission = true;
-        renderCloudSave();
-        return;
-      }
       let budget = 6;
-      for (const job of jobs) {
-        if (budget <= 0) break;
-        if (job.status !== 'done' && job.status !== 'partial') continue;
-        if (jobExpired(job)) continue;
-        for (const track of job.tracks) {
-          if (track.status !== 'done' || isSaved(track.id)) continue;
-          if (budget-- <= 0) break;
-          await saveTrack(job, track);
+      for (const kind of ['audio', 'video']) {
+        const target = saveTarget(kind);
+        if (!target.handle || target.needsPermission) continue;
+        if (!(await directoryPermission(target.handle, false))) {
+          target.needsPermission = true;
+          renderCloudSave();
+          continue;
+        }
+        for (const job of jobs) {
+          if (budget <= 0) break;
+          if (kindForJob(job) !== kind) continue;
+          if (job.status !== 'done' && job.status !== 'partial') continue;
+          if (jobExpired(job)) continue;
+          for (const track of job.tracks) {
+            if (track.status !== 'done' || isSaved(track.id)) continue;
+            if (budget-- <= 0) break;
+            await saveTrack(job, track);
+          }
         }
       }
     } finally {
@@ -774,6 +834,8 @@ function autoSave() {
 
 function renderCloudSave() {
   if (cloud.mode !== 'cloud') return;
+  ui.saveRow.hidden = true;
+  ui.destinationRows.hidden = false;
   const hours = cloud.retentionHours || 24;
   if (ui.heroCopy)
     ui.heroCopy.textContent =
@@ -785,58 +847,72 @@ function renderCloudSave() {
   ui.savePath.readOnly = true;
   ui.savePath.placeholder = 'Choose a folder';
   ui.browse.hidden = !supportsDirectoryPicker;
-  ui.browse.textContent = saveState.name ? 'Change' : 'Choose folder';
+  ui.browse.textContent = 'Browse';
   renderDestination();
 }
 
-function destinationState() {
-  const pending = pendingSaveCount();
-  const pendingText = pending ? `${pending} finished track${pending === 1 ? '' : 's'} ready to save.` : '';
+function destinationState(kind) {
+  const target = saveTarget(kind);
+  const pending = pendingSaveCount(kind);
+  const pendingText = pending ? `${pending} finished ${kind === 'video' ? 'video' : 'track'}${pending === 1 ? '' : 's'} ready to save.` : '';
   if (!supportsDirectoryPicker) {
     return {
       value: 'Downloads folder',
-      text: "This browser can't write to a folder. Use Download ZIP from a finished playlist.",
+      text: "This browser can't write to folders. Use the download buttons in the library.",
       kind: 'is-warning'
     };
   }
-  if (!saveState.handle) {
+  if (!target.handle) {
     return {
-      value: saveState.name || '',
-      text: pendingText || 'Finished tracks stay on the server until you choose a folder.',
+      value: target.name || '',
+      text: pendingText || `Finished ${kind === 'video' ? 'videos' : 'tracks'} stay on the server until you choose a folder.`,
       kind: pending ? 'is-warning' : ''
     };
   }
-  if (saveState.needsPermission) {
+  if (target.needsPermission) {
     return {
-      value: saveState.name,
-      text: `Folder access expired for “${saveState.name}”. Reconnect to keep saving.`,
+      value: target.name,
+      text: `Folder access expired for “${target.name}”. Reconnect to keep saving.`,
       kind: 'is-warning'
     };
   }
   if (!autoSaveEnabled) {
     return {
-      value: saveState.name,
-      text: pendingText || `All finished files are saved to “${saveState.name}”.`,
+      value: target.name,
+      text: pendingText || `All finished ${kind === 'video' ? 'videos' : 'tracks'} are saved to “${target.name}”.`,
       kind: pending ? '' : 'is-ok'
     };
   }
   return {
-    value: saveState.name,
-    text: pendingText || `Auto-save is on. New finished tracks go to “${saveState.name}”.`,
+    value: target.name,
+    text: pendingText || `Auto-save is on. New ${kind === 'video' ? 'videos' : 'tracks'} go to “${target.name}”.`,
     kind: 'is-ok'
   };
 }
 
 function renderDestination() {
   if (cloud.mode !== 'cloud') return;
-  const state = destinationState();
-  ui.savePath.value = state.value;
-  ui.saveState.textContent = state.text;
-  ui.saveState.className = `save-state ${state.kind}`.trim();
-  ui.settingsDestination.textContent = state.text;
-  ui.settingsChooseFolder.textContent = saveState.name ? 'Change folder' : 'Choose folder';
-  ui.settingsChooseFolder.disabled = !supportsDirectoryPicker;
-  ui.settingsForgetFolder.hidden = !saveState.handle;
+  for (const kind of ['audio', 'video']) {
+    const target = saveTarget(kind);
+    const state = destinationState(kind);
+    const path = kind === 'audio' ? ui.audioPath : ui.videoPath;
+    const browse = kind === 'audio' ? ui.audioBrowse : ui.videoBrowse;
+    const status = kind === 'audio' ? ui.audioState : ui.videoState;
+    path.value = state.value;
+    status.textContent = state.text;
+    status.className = `save-state ${state.kind}`.trim();
+    browse.hidden = !supportsDirectoryPicker;
+    browse.textContent = target.name ? 'Change' : 'Choose';
+    browse.classList.toggle('is-set', Boolean(target.handle));
+
+    const settingsText = kind === 'audio' ? ui.settingsAudioDestination : ui.settingsVideoDestination;
+    const settingsChoose = kind === 'audio' ? ui.settingsAudioChoose : ui.settingsVideoChoose;
+    const settingsForget = kind === 'audio' ? ui.settingsAudioForget : ui.settingsVideoForget;
+    settingsText.textContent = state.text;
+    settingsChoose.textContent = target.name ? 'Change folder' : 'Choose folder';
+    settingsChoose.disabled = !supportsDirectoryPicker;
+    settingsForget.hidden = !target.handle;
+  }
   ui.autoSaveToggle.checked = autoSaveEnabled;
   ui.autoSaveToggle.disabled = !supportsDirectoryPicker;
 }
@@ -903,6 +979,8 @@ function renderSettingsDialog() {
     : 'Local files stay on this computer.';
   ui.cloudStorageSection.hidden = !isCloud;
   ui.localStorageSection.hidden = isCloud;
+  ui.saveRow.hidden = isCloud;
+  ui.destinationRows.hidden = !isCloud;
   ui.retentionRow.hidden = !isCloud;
   ui.settingsRetentionValue.textContent = `${hours} hours`;
   if (!isCloud && ui.settingsLocalRoot) {
@@ -1637,29 +1715,33 @@ ui.duplicatePolicy.addEventListener('change', () => {
   writeLocal(DUPLICATE_KEY, duplicatePolicy);
 });
 
-ui.settingsChooseFolder.addEventListener('click', async () => {
-  await chooseSaveDir();
-  renderSettingsDialog();
-});
-
-ui.settingsForgetFolder.addEventListener('click', async () => {
-  const confirmed = await askConfirm({
-    title: 'Forget this folder?',
-    message:
-      'Snagly will stop saving to this folder. Files already saved to your device are not affected. Finished tracks stay on the server until you choose a folder again.',
-    confirmLabel: 'Forget folder',
-    cancelLabel: 'Keep',
-    danger: true
+for (const kind of ['audio', 'video']) {
+  const choose = kind === 'audio' ? ui.settingsAudioChoose : ui.settingsVideoChoose;
+  const forget = kind === 'audio' ? ui.settingsAudioForget : ui.settingsVideoForget;
+  choose.addEventListener('click', async () => {
+    await chooseSaveDir(kind);
+    renderSettingsDialog();
   });
-  if (!confirmed) return;
-  saveState.handle = null;
-  saveState.name = '';
-  saveState.needsPermission = false;
-  await idbDelete('save-dir');
-  renderCloudSave();
-  renderSettingsDialog();
-  toast('Folder forgotten. Choose a folder whenever you want to save again.');
-});
+  forget.addEventListener('click', async () => {
+    const label = folderLabel(kind).toLowerCase();
+    const confirmed = await askConfirm({
+      title: `Forget the ${label} folder?`,
+      message: `Snagly will stop saving ${label} there. Files already saved to your device are not affected. Finished tracks stay on the server until you choose a folder again.`,
+      confirmLabel: 'Forget folder',
+      cancelLabel: 'Keep',
+      danger: true
+    });
+    if (!confirmed) return;
+    const target = saveTarget(kind);
+    target.handle = null;
+    target.name = '';
+    target.needsPermission = false;
+    await idbDelete(`save-dir-${kind}`);
+    renderCloudSave();
+    renderSettingsDialog();
+    toast(`${folderLabel(kind)} folder forgotten. Choose one whenever you want to save again.`);
+  });
+}
 
 ui.settingsLocalRoot.addEventListener('input', () => {
   localRootDirty = true;
@@ -2566,11 +2648,23 @@ ui.urls.addEventListener('dragover', (event) => {
 ui.urls.addEventListener('dragleave', () => ui.urls.classList.remove('drag'));
 ui.urls.addEventListener('drop', addDroppedLinks);
 
+for (const kind of ['audio', 'video']) {
+  const button = kind === 'audio' ? ui.audioBrowse : ui.videoBrowse;
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      await chooseSaveDir(kind);
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
 ui.browse.addEventListener('click', async () => {
   if (cloud.mode === 'cloud') {
     ui.browse.disabled = true;
     try {
-      await chooseSaveDir();
+      await chooseSaveDir('video');
     } finally {
       ui.browse.disabled = false;
     }
