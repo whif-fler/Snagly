@@ -3584,10 +3584,14 @@ initTheme();
 initSelectMenus();
 initLibraryMenu();
 buildWave();
-loadFormats();
-loadVideoFormats();
 bootstrapped
-  .then(() => refresh())
+  .then(() => {
+    // /api/formats and /api/video-formats require the session cookie that
+    // bootstrap() sets, so they must not race it on a first visit.
+    loadFormats();
+    loadVideoFormats();
+    return refresh();
+  })
   .then(() => {
     applyMode();
     if (cloud.mode === 'cloud') loadSaveHandle();
