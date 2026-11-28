@@ -108,7 +108,7 @@ function createMockAdapter({ stepDelayMs = 25, bytes = 96 * 1024 } = {}) {
  * Production adapter. Every argument is server-owned; titles, URLs and format
  * keys are validated before they reach yt-dlp. No shell, no user config.
  */
-function createYtDlpAdapter({ ytdlpPath, ffmpegPath, logger, maxDurationMs = 30 * 60 * 1000 }) {
+function createYtDlpAdapter({ ytdlpPath, ffmpegPath, cookiesFile = '', logger, maxDurationMs = 30 * 60 * 1000 }) {
   if (!ytdlpPath) {
     const err = new Error('yt-dlp was not found. Set SNAGLY_YTDLP_PATH or install it on PATH.');
     err.code = 'ENOENT';
@@ -121,7 +121,8 @@ function createYtDlpAdapter({ ytdlpPath, ffmpegPath, logger, maxDurationMs = 30 
     '--socket-timeout',
     '20',
     '--retries',
-    '3'
+    '3',
+    ...(cookiesFile ? ['--cookies', cookiesFile] : [])
   ];
 
   function normalizeThumb(value) {

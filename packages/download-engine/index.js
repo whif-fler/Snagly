@@ -8,6 +8,7 @@ function createAdapter(config, { logger, tools } = {}) {
   return createYtDlpAdapter({
     ytdlpPath: tools?.yt || config.ytdlpPath,
     ffmpegPath: tools?.ffmpeg || config.ffmpegPath,
+    cookiesFile: config.cookiesFile || '',
     logger,
     maxDurationMs: config.maxDurationMs
   });

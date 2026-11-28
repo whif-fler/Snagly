@@ -10,6 +10,7 @@ data/cloud/
 
 # Exported browser cookies. These are credentials; never commit them.
 cookies.txt
+secrets/
 
 # Environment files may contain secrets. The example is committed.
 .env

@@ -26,6 +26,9 @@ services:
       - '127.0.0.1:${SNAGLY_HOST_PORT:-4174}:4174'
     volumes:
       - snagly-data:/data
+      # Optional: ./secrets/cookies.txt exported from a signed-in YouTube
+      # account. Only used when SNAGLY_COOKIES_FILE is set in .env.
+      - ./secrets:/run/secrets:ro
     read_only: true
     tmpfs:
       # `exec` is required: Docker mounts tmpfs noexec by default, and the
