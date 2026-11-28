@@ -71,9 +71,26 @@
   --shadow-lift: 0 1px 2px rgba(0, 0, 0, .35), 0 20px 48px rgba(0, 0, 0, .35);
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+  /* Flex and grid children default to min-width:auto, which makes Safari
+     refuse to shrink labels and forces the page wider than the viewport. */
+  min-width: 0;
+}
 
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  /* iPhone Safari otherwise inflates text on narrow layouts and clips the
+     right edge of buttons and headings. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* clip does not create a new scroll container, so the sticky header keeps
+   working. It catches anything that still escapes on older WebKit builds. */
+@supports (overflow-x: clip) {
+  html { overflow-x: clip; }
+}
 
 body {
   margin: 0;
@@ -100,6 +117,7 @@ body {
 }
 
 button, input, textarea { font: inherit; color: inherit; }
+img, svg { max-width: 100%; }
 
 button { cursor: pointer; }
 
@@ -1420,6 +1438,9 @@ button { cursor: pointer; }
   .policy-head, .policy-foot, .policy { padding-left: 18px; padding-right: 18px; }
   .policy-head .quiet-button { padding: 0 10px; }
   .site-footer { margin-top: 32px; }
+  .policy-table-wrap { -webkit-overflow-scrolling: touch; }
+  .policy-table th { white-space: normal; }
+  .policy-table th, .policy-table td { padding: 9px 10px; font-size: 12.5px; }
 }
 
 /* ==========================================================================
