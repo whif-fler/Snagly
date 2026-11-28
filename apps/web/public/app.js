@@ -102,9 +102,11 @@ const ui = {
   settingsFootNote: $('settingsFootNote'),
   settingsAudioDestination: $('settingsAudioDestination'),
   settingsAudioChoose: $('settingsAudioChoose'),
+  settingsAudioReconnect: $('settingsAudioReconnect'),
   settingsAudioForget: $('settingsAudioForget'),
   settingsVideoDestination: $('settingsVideoDestination'),
   settingsVideoChoose: $('settingsVideoChoose'),
+  settingsVideoReconnect: $('settingsVideoReconnect'),
   settingsVideoForget: $('settingsVideoForget'),
   settingsLocalRoot: $('settingsLocalRoot'),
   settingsLocalBrowse: $('settingsLocalBrowse'),
@@ -425,8 +427,9 @@ function openHandleDb() {
 }
 
 async function idbGet(key) {
+  let db;
   try {
-    const db = await openHandleDb();
+    db = await openHandleDb();
     return await new Promise((resolve, reject) => {
       const tx = db.transaction('handles', 'readonly');
       const req = tx.objectStore('handles').get(key);
@@ -435,31 +438,44 @@ async function idbGet(key) {
     });
   } catch {
     return null;
+  } finally {
+    db?.close();
   }
 }
 
+// Returns true so callers can warn when a browser blocks persistence; without
+// that, a chosen folder looks permanent but disappears on the next reload.
 async function idbSet(key, value) {
+  let db;
   try {
-    const db = await openHandleDb();
+    db = await openHandleDb();
     await new Promise((resolve, reject) => {
       const tx = db.transaction('handles', 'readwrite');
       tx.objectStore('handles').put(value, key);
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  } finally {
+    db?.close();
+  }
 }
 
 async function idbDelete(key) {
+  let db;
   try {
-    const db = await openHandleDb();
+    db = await openHandleDb();
     await new Promise((resolve, reject) => {
       const tx = db.transaction('handles', 'readwrite');
       tx.objectStore('handles').delete(key);
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
-  } catch {}
+  } catch {} finally {
+    db?.close();
+  }
 }
 
 function safeLocalName(value, fallback = 'track') {
@@ -481,6 +497,69 @@ async function directoryPermission(handle, request = false) {
   } catch {
     return false;
   }
+}
+
+// Background work must never call requestPermission(): browsers only allow it
+// during a user gesture. Interactive saves and the Reconnect button may.
+async function ensureFolderAccess(kind, { interactive = false } = {}) {
+  const target = saveTarget(kind);
+  if (!target.handle) return false;
+  if (await directoryPermission(target.handle, false)) {
+    if (target.needsPermission) {
+      target.needsPermission = false;
+      renderCloudSave();
+    }
+    return true;
+  }
+  target.needsPermission = true;
+  renderCloudSave();
+  if (interactive && (await directoryPermission(target.handle, true))) {
+    target.needsPermission = false;
+    renderCloudSave();
+    return true;
+  }
+  return false;
+}
+
+async function reconnectSaveDir(kind = 'audio') {
+  if (!supportsDirectoryPicker) {
+    toast('This browser cannot write to folders. Use the download buttons in the library.', 'error');
+    return;
+  }
+  const target = saveTarget(kind);
+  if (!target.handle) return chooseSaveDir(kind);
+  try {
+    if (await directoryPermission(target.handle, true)) {
+      target.needsPermission = false;
+      renderCloudSave();
+      toast(`${folderLabel(kind)} folder reconnected.`);
+      autoSave();
+    } else {
+      target.needsPermission = true;
+      renderCloudSave();
+      toast(`Could not reconnect the ${folderLabel(kind).toLowerCase()} folder.`, 'error');
+    }
+  } catch (err) {
+    target.needsPermission = true;
+    renderCloudSave();
+    toast(`Could not reconnect that folder: ${err.message}`, 'error');
+  }
+}
+
+// Keep the UI honest if permission is changed in the browser's site settings.
+async function refreshFolderPermissions() {
+  if (!supportsDirectoryPicker || cloud.mode !== 'cloud') return;
+  let changed = false;
+  for (const kind of ['audio', 'video']) {
+    const target = saveTarget(kind);
+    if (!target.handle) continue;
+    const granted = await directoryPermission(target.handle, false);
+    if (target.needsPermission === granted) {
+      target.needsPermission = !granted;
+      changed = true;
+    }
+  }
+  if (changed) renderCloudSave();
 }
 
 async function loadSaveHandle() {
@@ -567,16 +646,23 @@ async function chooseSaveDir(kind = 'audio') {
     target.handle = handle;
     target.name = handle.name || 'Selected folder';
     target.needsPermission = false;
-    await idbSet(`save-dir-${kind}`, handle);
+    const stored = await idbSet(`save-dir-${kind}`, handle);
     renderCloudSave();
-    toast(`${folderLabel(kind)} will save to ${target.name}.`);
+    if (stored) {
+      toast(`${folderLabel(kind)} will save to ${target.name}.`);
+    } else {
+      toast(
+        `${folderLabel(kind)} will save to ${target.name} for now, but this browser blocked remembering it.`,
+        'error'
+      );
+    }
     autoSave();
   } catch (err) {
     if (err?.name !== 'AbortError') toast(`Could not use that folder: ${err.message}`, 'error');
   }
 }
 
-async function saveTrack(job, track, { force = false, batch = false } = {}) {
+async function saveTrack(job, track, { force = false, batch = false, interactive = false } = {}) {
   if (!track?.downloadUrl && !track?.id) return false;
   const kind = kindForJob(job);
   const target = saveTarget(kind);
@@ -589,12 +675,11 @@ async function saveTrack(job, track, { force = false, batch = false } = {}) {
   if (!isSaved(track.id) || force) {
     if (saveState.saving.has(track.id)) return false;
     if (!target.handle) {
+      if (!interactive) return false;
       await chooseSaveDir(kind);
       if (!target.handle) return false;
     }
-    if (!(await directoryPermission(target.handle, true))) {
-      target.needsPermission = true;
-      renderCloudSave();
+    if (!(await ensureFolderAccess(kind, { interactive }))) {
       if (!batch) toast(`Reconnect ${target.name || 'the folder'} to save downloads.`, 'error');
       return false;
     }
@@ -626,8 +711,13 @@ async function saveTrack(job, track, { force = false, batch = false } = {}) {
         );
       }
       writable = await fileHandle.createWritable();
-      if (res.body?.pipeTo) await res.body.pipeTo(writable);
-      else await writable.write(await res.arrayBuffer());
+      if (res.body?.pipeTo) {
+        // pipeTo closes the destination on success.
+        await res.body.pipeTo(writable);
+      } else {
+        await writable.write(await res.arrayBuffer());
+        await writable.close();
+      }
       writable = null;
       markSaved(track.id);
       target.needsPermission = false;
@@ -643,7 +733,7 @@ async function saveTrack(job, track, { force = false, batch = false } = {}) {
         renderCloudSave();
         if (!batch) {
           toast(
-            `Folder access expired for ${target.name || 'the selected folder'}. Reconnect it in Storage.`,
+            `Folder access expired for ${target.name || 'the selected folder'}. Use Reconnect and try again.`,
             'error'
           );
         }
@@ -665,7 +755,7 @@ async function saveTrack(job, track, { force = false, batch = false } = {}) {
   return true;
 }
 
-async function saveJob(job, { force = false } = {}) {
+async function saveJob(job, { force = false, interactive = false } = {}) {
   if (!job) return;
   if (jobExpired(job)) {
     toast('That server copy has expired. Download it again to make a new copy.', 'error');
@@ -689,7 +779,7 @@ async function saveJob(job, { force = false } = {}) {
   let failed = 0;
   for (const track of done) {
     const wasSaved = isSaved(track.id);
-    if (await saveTrack(job, track, { force, batch: true })) {
+    if (await saveTrack(job, track, { force, batch: true, interactive })) {
       if (force || !wasSaved) saved++;
     } else {
       failed++;
@@ -711,20 +801,16 @@ async function saveJob(job, { force = false } = {}) {
   renderCloudSave();
 }
 
-// Cloud fallback for browsers without the File System Access API: hand the
-// signed archive or track URL to the normal download manager.
+// Cloud browsers save every finished job to its matching folder. A single
+// track still lands as the real file, not a ZIP; if no folder is chosen (or the
+// picker is cancelled), fall back to the normal download manager.
 function downloadOrSaveJob(job, { force = false } = {}) {
   if (!job) return;
   if (jobExpired(job)) {
     toast('That server copy has expired. Download it again to make a new copy.', 'error');
     return;
   }
-  const single = singleTrackDownload(job);
-  if (single) {
-    window.location.assign(single.downloadUrl);
-    return;
-  }
-  if (supportsDirectoryPicker) return saveJob(job, { force });
+  if (supportsDirectoryPicker) return saveJob(job, { force, interactive: true });
   const url = jobDownloadUrl(job);
   if (url) window.location.assign(url);
   else toast('Nothing is ready to download yet.', 'error');
@@ -776,7 +862,11 @@ async function downloadOrSaveTrack(job, track) {
     toast('That server copy has expired. Download it again to make a new copy.', 'error');
     return;
   }
-  if (supportsDirectoryPicker) return saveTrack(job, track, { force: true });
+  if (supportsDirectoryPicker) {
+    const saved = await saveTrack(job, track, { force: true, interactive: true });
+    if (!saved && track.downloadUrl) window.location.assign(track.downloadUrl);
+    return;
+  }
   if (track.downloadUrl) window.location.assign(track.downloadUrl);
   else toast('That file is not available.', 'error');
 }
@@ -812,7 +902,7 @@ function autoSave() {
           for (const track of job.tracks) {
             if (track.status !== 'done' || isSaved(track.id)) continue;
             if (budget-- <= 0) break;
-            await saveTrack(job, track);
+            await saveTrack(job, track, { interactive: false });
           }
         }
       }
@@ -904,18 +994,22 @@ function renderDestination() {
   ui.saveState.textContent = state.text;
   ui.saveState.className = `save-state ${state.kind}`.trim();
   ui.browse.hidden = !supportsDirectoryPicker;
-  ui.browse.textContent = target.name ? 'Change' : 'Choose';
+  ui.browse.textContent = target.needsPermission ? 'Reconnect' : target.name ? 'Change' : 'Choose';
   ui.browse.classList.toggle('is-set', Boolean(target.handle));
+  ui.browse.classList.toggle('is-warning', Boolean(target.needsPermission));
 
   for (const settingsKind of ['audio', 'video']) {
     const settingsTarget = saveTarget(settingsKind);
     const settingsState = destinationState(settingsKind);
     const settingsText = settingsKind === 'audio' ? ui.settingsAudioDestination : ui.settingsVideoDestination;
     const settingsChoose = settingsKind === 'audio' ? ui.settingsAudioChoose : ui.settingsVideoChoose;
+    const settingsReconnect = settingsKind === 'audio' ? ui.settingsAudioReconnect : ui.settingsVideoReconnect;
     const settingsForget = settingsKind === 'audio' ? ui.settingsAudioForget : ui.settingsVideoForget;
     settingsText.textContent = settingsState.text;
     settingsChoose.textContent = settingsTarget.name ? 'Change folder' : 'Choose folder';
     settingsChoose.disabled = !supportsDirectoryPicker;
+    settingsReconnect.hidden = !settingsTarget.needsPermission;
+    settingsReconnect.disabled = !supportsDirectoryPicker;
     settingsForget.hidden = !settingsTarget.handle;
   }
   ui.autoSaveToggle.checked = autoSaveEnabled;
@@ -1722,9 +1816,14 @@ ui.duplicatePolicy.addEventListener('change', () => {
 
 for (const kind of ['audio', 'video']) {
   const choose = kind === 'audio' ? ui.settingsAudioChoose : ui.settingsVideoChoose;
+  const reconnect = kind === 'audio' ? ui.settingsAudioReconnect : ui.settingsVideoReconnect;
   const forget = kind === 'audio' ? ui.settingsAudioForget : ui.settingsVideoForget;
   choose.addEventListener('click', async () => {
     await chooseSaveDir(kind);
+    renderSettingsDialog();
+  });
+  reconnect.addEventListener('click', async () => {
+    await reconnectSaveDir(kind);
     renderSettingsDialog();
   });
   forget.addEventListener('click', async () => {
@@ -2655,11 +2754,14 @@ ui.urls.addEventListener('drop', addDroppedLinks);
 
 ui.browse.addEventListener('click', async () => {
   if (cloud.mode === 'cloud') {
+    const kind = status.isVideo ? 'video' : 'audio';
     ui.browse.disabled = true;
     try {
-      await chooseSaveDir(status.isVideo ? 'video' : 'audio');
+      if (saveTarget(kind).needsPermission) await reconnectSaveDir(kind);
+      else await chooseSaveDir(kind);
     } finally {
       ui.browse.disabled = false;
+      renderDestination();
     }
     return;
   }
@@ -3713,10 +3815,15 @@ bootstrapped
 setInterval(() => {
   refresh();
 }, 3000);
-// Re-check the moment the tab regains focus (e.g. after deleting folders in Explorer).
+// Re-check the moment the tab regains focus (e.g. after deleting folders in
+// Explorer or changing site permissions).
 window.addEventListener('focus', () => {
   refresh();
+  refreshFolderPermissions();
 });
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refresh();
+  if (!document.hidden) {
+    refresh();
+    refreshFolderPermissions();
+  }
 });

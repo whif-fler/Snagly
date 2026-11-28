@@ -2046,6 +2046,14 @@ button { cursor: pointer; }
   border-color: color-mix(in srgb, var(--success) 45%, var(--hairline));
   color: var(--success);
 }
+.folder-button.is-warning {
+  border-color: color-mix(in srgb, var(--warning) 50%, var(--hairline));
+  color: var(--warning);
+}
+.folder-button.is-warning:hover {
+  background: color-mix(in srgb, var(--warning) 10%, var(--paper));
+  border-color: var(--warning);
+}
 
 @media (max-width: 760px) {
   .save-row[data-kind] { grid-template-columns: minmax(108px, auto) minmax(0, 1fr) auto; }
