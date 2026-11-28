@@ -2713,8 +2713,14 @@ function jobLinkKey(job) {
   return youtubeKey(job.url || '');
 }
 
-function activeDuplicateKeys(urls) {
-  const existing = new Set(jobs.filter((job) => !jobExpired(job)).map((job) => jobLinkKey(job)));
+function activeDuplicateKeys(urls, isVideo) {
+  // An MP3 and a Video copy of the same link are different downloads, so only
+  // compare against jobs made in the same mode.
+  const existing = new Set(
+    jobs
+      .filter((job) => !jobExpired(job) && Boolean(job.isVideo) === Boolean(isVideo))
+      .map((job) => jobLinkKey(job))
+  );
   return [...new Set(urls.map((url) => youtubeKey(url)).filter((key) => existing.has(key)))];
 }
 
@@ -2733,6 +2739,7 @@ async function startDownload() {
   }
 
   const hasPreview = Boolean(previewData?.sources.length);
+  const isVideo = ui.modeVideo.classList.contains('active');
 
   // Cloud jobs expire, so the server permits the same link again. Within one
   // session a second copy is rarely wanted, so ask before making one.
@@ -2740,7 +2747,7 @@ async function startDownload() {
     const attemptUrls = hasPreview
       ? previewData.sources.filter((source, index) => selected[index]?.size).map((source) => source.url)
       : urls;
-    const duplicates = activeDuplicateKeys(attemptUrls);
+    const duplicates = activeDuplicateKeys(attemptUrls, isVideo);
     if (duplicates.length) {
       if (duplicatePolicy === 'skip') {
         toast(
@@ -2766,7 +2773,6 @@ async function startDownload() {
   // A preview means the user has seen the track list. Download the tracks
   // they kept selected, whether the list is open or not.
   if (hasPreview) {
-    const isVideo = ui.modeVideo.classList.contains('active');
     const items = previewData.sources
       .map((source, si) => ({ url: source.url, selected: [...selected[si]] }))
       .filter((item) => item.selected.length);
@@ -2824,7 +2830,6 @@ async function startDownload() {
   setDownloadBusy(true);
   setDownloadLabel('Preparing…');
   try {
-    const isVideo = ui.modeVideo.classList.contains('active');
     const fmt = isVideo ? ui.videoFormatSelect.value : ui.formatSelect.value;
     const result = await submitJobs({
       urls,
