@@ -61,6 +61,18 @@ COPY package.json package-lock.json ./
 COPY apps ./apps
 COPY packages ./packages
 
+# Fingerprint the web assets so a deploy can never pair a fresh index.html
+# with a stale cached app.js/styles.css. Only the hashed names are cached.
+RUN set -eu; \
+  cd /app/apps/web/public; \
+  JS_HASH=$(sha256sum app.js | cut -c1-12); \
+  CSS_HASH=$(sha256sum styles.css | cut -c1-12); \
+  mv app.js "app.${JS_HASH}.js"; \
+  mv styles.css "styles.${CSS_HASH}.css"; \
+  sed -i "s|href=\"/styles.css\"|href=\"/styles.${CSS_HASH}.css\"|; s|src=\"/app.js\"|src=\"/app.${JS_HASH}.js\"|" index.html; \
+  grep -q "app.${JS_HASH}.js" index.html; \
+  grep -q "styles.${CSS_HASH}.css" index.html
+
 ENV NODE_ENV=production \
   SNAGLY_MODE=cloud \
   SNAGLY_HOST=0.0.0.0 \
