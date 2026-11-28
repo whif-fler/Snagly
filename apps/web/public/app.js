@@ -189,6 +189,9 @@ const saveState = {
     audio: { handle: null, name: '', needsPermission: false },
     video: { handle: null, name: '', needsPermission: false }
   },
+  // Per-download folders picked from the library. These override the Music/Video
+  // defaults so one item can go somewhere else without changing the others.
+  jobTargets: new Map(),
   saved: new Set(),
   saving: new Set()
 };
@@ -202,11 +205,74 @@ function kindForJob(job) {
 }
 
 function targetForJob(job) {
-  return saveTarget(kindForJob(job));
+  return (job && saveState.jobTargets.get(job.id)) || saveTarget(kindForJob(job));
 }
 
 function folderLabel(kind) {
   return kind === 'video' ? 'Video' : 'Music';
+}
+
+async function rememberJobTargets() {
+  const stored = {};
+  for (const [id, target] of saveState.jobTargets) {
+    if (target?.handle) stored[id] = target.handle;
+  }
+  return idbSet('save-dir-jobs', stored);
+}
+
+async function chooseJobSaveDir(job) {
+  if (!supportsDirectoryPicker) {
+    toast('This browser cannot write to folders.', 'error');
+    return false;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({
+      id: `snagly-saves-${kindForJob(job)}`,
+      mode: 'readwrite'
+    });
+    if (!(await directoryPermission(handle, true))) {
+      toast('Folder permission was not granted.', 'error');
+      return false;
+    }
+    saveState.jobTargets.set(job.id, {
+      handle,
+      name: handle.name || 'Selected folder',
+      needsPermission: false
+    });
+    const stored = await rememberJobTargets();
+    const name = handle.name || 'the chosen folder';
+    lastFilmstripSig = '';
+    renderLibrary();
+    toast(
+      stored
+        ? `${job.title || 'This download'} will save to ${name}.`
+        : `${job.title || 'This download'} will save to ${name} for now, but this browser blocked remembering it.`,
+      stored ? 'info' : 'error'
+    );
+    return true;
+  } catch (err) {
+    if (err?.name !== 'AbortError') toast(`Could not use that folder: ${err.message}`, 'error');
+    return false;
+  }
+}
+
+async function chooseLocationForJob(job) {
+  if (cloud.mode !== 'cloud') return;
+  if (!supportsDirectoryPicker) {
+    toast('This browser cannot write to folders. Use the download button instead.', 'error');
+    return;
+  }
+  if (jobExpired(job)) {
+    toast('That server copy has expired. Download it again to make a new copy.', 'error');
+    return;
+  }
+  if (!job.tracks?.some((t) => t.status === 'done')) {
+    toast('Nothing has finished downloading yet.', 'error');
+    return;
+  }
+  if (await chooseJobSaveDir(job)) {
+    await saveJob(job, { force: true, interactive: true });
+  }
 }
 
 // The visible toggle is the safest source for the composer destination; server
@@ -542,20 +608,20 @@ async function directoryPermission(handle, request = false) {
 
 // Background work must never call requestPermission(): browsers only allow it
 // during a user gesture. Interactive saves and the Reconnect button may.
-async function ensureFolderAccess(kind, { interactive = false } = {}) {
-  const target = saveTarget(kind);
-  if (!target.handle) return false;
-  if (await directoryPermission(target.handle, false)) {
-    if (target.needsPermission) {
-      target.needsPermission = false;
+async function ensureFolderAccess(kind, { interactive = false, target = null } = {}) {
+  const chosen = target || saveTarget(kind);
+  if (!chosen.handle) return false;
+  if (await directoryPermission(chosen.handle, false)) {
+    if (chosen.needsPermission) {
+      chosen.needsPermission = false;
       renderCloudSave();
     }
     return true;
   }
-  target.needsPermission = true;
+  chosen.needsPermission = true;
   renderCloudSave();
-  if (interactive && (await directoryPermission(target.handle, true))) {
-    target.needsPermission = false;
+  if (interactive && (await directoryPermission(chosen.handle, true))) {
+    chosen.needsPermission = false;
     renderCloudSave();
     return true;
   }
@@ -624,6 +690,17 @@ async function loadSaveHandle() {
     target.needsPermission = !(await directoryPermission(handle, false));
   }
   if (migrated) await idbDelete('save-dir');
+  const jobHandles = await idbGet('save-dir-jobs');
+  if (jobHandles && typeof jobHandles === 'object') {
+    for (const [id, handle] of Object.entries(jobHandles)) {
+      if (typeof handle?.getDirectoryHandle !== 'function') continue;
+      saveState.jobTargets.set(id, {
+        handle,
+        name: handle.name || 'Selected folder',
+        needsPermission: !(await directoryPermission(handle, false))
+      });
+    }
+  }
   renderCloudSave();
   if (['audio', 'video'].some((kind) => saveTarget(kind).handle && !saveTarget(kind).needsPermission)) {
     autoSave();
@@ -702,7 +779,7 @@ async function chooseSaveDir(kind = 'audio') {
 async function saveTrack(job, track, { force = false, batch = false, interactive = false } = {}) {
   if (!track?.downloadUrl && !track?.id) return false;
   const kind = kindForJob(job);
-  const target = saveTarget(kind);
+  let target = targetForJob(job);
   if (jobExpired(job)) {
     if (!batch) {
       toast('That server copy has expired. Download it again to make a new copy.', 'error');
@@ -713,10 +790,12 @@ async function saveTrack(job, track, { force = false, batch = false, interactive
     if (saveState.saving.has(track.id)) return false;
     if (!target.handle) {
       if (!interactive) return false;
-      await chooseSaveDir(kind);
+      if (saveState.jobTargets.has(job.id)) await chooseJobSaveDir(job);
+      else await chooseSaveDir(kind);
+      target = targetForJob(job);
       if (!target.handle) return false;
     }
-    if (!(await ensureFolderAccess(kind, { interactive }))) {
+    if (!(await ensureFolderAccess(kind, { interactive, target }))) {
       if (!batch) toast(`Reconnect ${target.name || 'the folder'} to save downloads.`, 'error');
       return false;
     }
@@ -778,7 +857,13 @@ async function saveTrack(job, track, { force = false, batch = false, interactive
         target.handle = null;
         target.name = '';
         target.needsPermission = false;
-        await idbDelete(`save-dir-${kind}`);
+        if (saveState.jobTargets.get(job.id) === target) {
+          saveState.jobTargets.delete(job.id);
+          await rememberJobTargets();
+        } else {
+          await idbDelete(`save-dir-${kind}`);
+        }
+        lastFilmstripSig = '';
         renderCloudSave();
         if (!batch) toast('That folder is no longer available. Choose a folder again.', 'error');
       } else if (!batch) {
@@ -803,9 +888,11 @@ async function saveJob(job, { force = false, interactive = false } = {}) {
     toast('Nothing has finished downloading yet.');
     return;
   }
-  const target = targetForJob(job);
+  let target = targetForJob(job);
   if (!target.handle) {
-    await chooseSaveDir(kindForJob(job));
+    if (saveState.jobTargets.has(job.id)) await chooseJobSaveDir(job);
+    else await chooseSaveDir(kindForJob(job));
+    target = targetForJob(job);
     if (!target.handle) {
       const url = jobDownloadUrl(job);
       if (url) window.location.assign(url);
@@ -1461,6 +1548,7 @@ function renderLibrary() {
           </div>
           <div class="tile-actions">
             <button type="button" data-action="open">Open folder</button>
+            <button type="button" data-action="location" hidden>Save location</button>
             <button type="button" data-action="zip" hidden>Download ZIP</button>
             <button type="button" data-action="retry" hidden>Retry failed</button>
             <button type="button" data-action="remove" class="tile-remove" title="Remove from library">Remove</button>
@@ -1553,6 +1641,11 @@ function renderLibrary() {
     } else {
       folderChip.hidden = true;
     }
+
+    const locationButton = tile.querySelector('[data-action="location"]');
+    locationButton.hidden =
+      cloud.mode !== 'cloud' || !supportsDirectoryPicker || state.doneTracks.length === 0;
+    locationButton.textContent = folders.length ? 'Change location' : 'Save location';
 
     const retryButton = tile.querySelector('[data-action="retry"]');
     const retryable = (job.failed || 0) + (job.cancelled || 0) + (job.missing || 0);
@@ -3041,6 +3134,10 @@ ui.filmstrip.addEventListener('click', async (event) => {
   }
   if (button.dataset.action === 'remove') {
     await removeOneJob(job);
+    return;
+  }
+  if (button.dataset.action === 'location') {
+    await chooseLocationForJob(job);
     return;
   }
   if (button.dataset.action === 'zip') {
