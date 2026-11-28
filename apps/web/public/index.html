@@ -59,50 +59,66 @@
       <div class="composer-card">
         <label class="field-label" for="urls">Links <span>One per line, playlists or single videos</span></label>
         <textarea id="urls" rows="3" spellcheck="false" placeholder="https://youtube.com/playlist?list=… or https://youtu.be/…"></textarea>
+        <p class="composer-note" id="publicVideosNote" hidden></p>
 
         <div class="mode-quick" role="group" aria-label="Download format">
           <button type="button" class="mode-btn active" id="modeAudio" data-mode="audio" aria-pressed="true">MP3</button>
           <button type="button" class="mode-btn" id="modeVideo" data-mode="video" aria-pressed="false">Video</button>
         </div>
 
-        <div class="quality-section" id="audioQualitySection">
-          <label class="section-label" for="formatSelect">Audio format</label>
-          <select id="formatSelect">
-            <option value="mp3">MP3 320 kbps</option>
-            <option value="mp3v0">MP3 V0 (VBR)</option>
-            <option value="flac">FLAC (lossless)</option>
-            <option value="opus">Opus</option>
-            <option value="m4a">M4A / AAC</option>
-            <option value="best">Best available (original)</option>
-          </select>
-          <span class="quality-hint" id="audioQualityHint">Quality follows the source</span>
-        </div>
+        <details class="composer-options" id="composerOptions">
+          <summary class="composer-options-summary" id="composerOptionsSummary">
+            <span>Options</span>
+            <svg class="options-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </summary>
+          <div class="composer-options-body">
+            <div class="quality-section" id="audioQualitySection">
+              <label class="section-label" for="formatSelect">Audio format</label>
+              <select id="formatSelect">
+                <option value="mp3">MP3 320 kbps</option>
+                <option value="mp3v0">MP3 V0 (VBR)</option>
+                <option value="flac">FLAC (lossless)</option>
+                <option value="opus">Opus</option>
+                <option value="m4a">M4A / AAC</option>
+                <option value="best">Best available (original)</option>
+              </select>
+              <span class="quality-hint" id="audioQualityHint">Quality follows the source</span>
+            </div>
 
-        <div class="quality-section" id="videoQualitySection" hidden>
-          <label class="section-label" for="videoFormatSelect">Video quality</label>
-          <select id="videoFormatSelect">
-            <option value="2160p">4K MP4 (2160p)</option>
-            <option value="1440p">1440p MP4</option>
-            <option value="1080p" selected>1080p MP4</option>
-            <option value="720p">720p MP4</option>
-            <option value="480p">480p MP4</option>
-            <option value="360p">360p MP4</option>
-            <option value="best">Best quality</option>
-          </select>
-          <span class="quality-hint" id="videoQualityHint">Video + audio, source quality</span>
-        </div>
+            <div class="quality-section" id="videoQualitySection" hidden>
+              <label class="section-label" for="videoFormatSelect">Video quality</label>
+              <select id="videoFormatSelect">
+                <option value="2160p">4K MP4 (2160p)</option>
+                <option value="1440p">1440p MP4</option>
+                <option value="1080p" selected>1080p MP4</option>
+                <option value="720p">720p MP4</option>
+                <option value="480p">480p MP4</option>
+                <option value="360p">360p MP4</option>
+                <option value="best">Best quality</option>
+              </select>
+              <span class="quality-hint" id="videoQualityHint">Video + audio, source quality</span>
+            </div>
 
-        <div class="save-row" id="saveRow" data-kind="audio">
-          <label for="savePath">
-            <span class="destination-icon" id="destinationIcon" aria-hidden="true">♪</span>
-            <span id="destinationLabel">Music folder</span>
-          </label>
-          <div class="save-control">
-            <input id="savePath" type="text" spellcheck="false" autocomplete="off" aria-describedby="destinationState">
-            <span class="save-state" id="destinationState" role="status"></span>
+            <div class="save-row" id="saveRow" data-kind="audio">
+              <label for="savePath">
+                <span class="destination-icon" id="destinationIcon" aria-hidden="true">♪</span>
+                <span id="destinationLabel">Music folder</span>
+              </label>
+              <div class="save-control">
+                <input id="savePath" type="text" spellcheck="false" autocomplete="off" aria-describedby="destinationState">
+                <span class="save-state" id="destinationState" role="status"></span>
+              </div>
+              <button class="quiet-button folder-button" id="browseButton" type="button">Choose</button>
+            </div>
+
+            <div class="options-choose">
+              <button class="quiet-button disclosure-button" id="chooseButton" type="button" aria-expanded="false" aria-controls="selectionPanel">
+                <svg class="disclosure-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="disclosure-label">Choose tracks</span>
+              </button>
+            </div>
           </div>
-          <button class="quiet-button folder-button" id="browseButton" type="button">Choose</button>
-        </div>
+        </details>
 
         <div class="composer-footer">
           <div class="footer-left">
@@ -110,10 +126,6 @@
               <span class="connection-dot" id="connectionDot" aria-hidden="true"></span>
               <span id="connectionLabel">YouTube: Guest</span>
               <svg class="connection-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-            <button class="quiet-button disclosure-button" id="chooseButton" type="button" aria-expanded="false" aria-controls="selectionPanel">
-              <svg class="disclosure-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <span class="disclosure-label">Choose tracks</span>
             </button>
           </div>
           <div class="composer-actions">
@@ -224,7 +236,7 @@
         <select id="libraryFilter" aria-label="Filter library">
           <option value="all">All</option>
           <option value="done">Finished</option>
-          <option value="server">On server</option>
+          <option value="server">Ready to save</option>
           <option value="saved">Saved to device</option>
           <option value="expired">Expired</option>
           <option value="partial">Partially finished</option>
@@ -397,7 +409,7 @@
                     <span class="settings-label">Server copies</span>
                     <span class="settings-help" id="settingsRetention">Files stay on the server for a limited time, then expire.</span>
                   </div>
-                  <span class="settings-value" id="settingsRetentionValue">24 hours</span>
+                  <span class="settings-value" id="settingsRetentionValue">—</span>
                 </div>
                 <p class="settings-note">Browsers that cannot write to a folder still get ZIP and individual file downloads from the library.</p>
               </div>
@@ -444,7 +456,7 @@
                 <h3>This session</h3>
                 <div class="settings-kv"><span>Mode</span><span id="sessionMode">Local app</span></div>
                 <div class="settings-kv" id="sessionUserRow" hidden><span>Account</span><span>Anonymous session</span></div>
-                <div class="settings-kv" id="sessionRetentionRow" hidden><span>Server copies</span><span id="sessionRetention">24 hours</span></div>
+                <div class="settings-kv" id="sessionRetentionRow" hidden><span>Server copies</span><span id="sessionRetention">—</span></div>
                 <div class="settings-kv"><span>Downloads run</span><span id="sessionWhere">On this computer</span></div>
               </div>
             </section>
@@ -453,7 +465,7 @@
               <div class="settings-section">
                 <h3>What this app stores</h3>
                 <div class="settings-kv"><span>Processing</span><span id="privacyMode">On this computer</span></div>
-                <div class="settings-kv" id="privacyRetentionRow" hidden><span>Server copies</span><span id="privacyRetention">Expire after 24 hours</span></div>
+                <div class="settings-kv" id="privacyRetentionRow" hidden><span>Server copies</span><span id="privacyRetention">—</span></div>
                 <div class="settings-kv"><span>YouTube sign-in</span><span id="privacyCookies">Not used</span></div>
                 <div class="settings-kv"><span>Saved-file markers</span><span>This browser only</span></div>
               </div>
@@ -491,6 +503,7 @@
     </div>
 
   <div class="toast-region" id="toasts" aria-live="polite"></div>
+  <script src="/ui-mode.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

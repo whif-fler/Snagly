@@ -23,6 +23,8 @@
     if (!res.ok) return;
     const data = await res.json();
     if (data?.capabilities?.mode !== 'cloud') return;
+    const hours = window.SnaglyMode.retentionHours(data);
+    const hoursText = window.SnaglyMode.hoursLabel(hours);
     document.getElementById('localPrivacy').hidden = true;
     document.getElementById('cloudPrivacy').hidden = false;
     document.getElementById('policyTitle').textContent = 'Your library is stored on this server';
@@ -30,10 +32,11 @@
       'This Snagly instance is self-hosted. The operator stores your jobs and files for a limited time so you can save them to your device.';
     document.getElementById('policyFooter').textContent =
       'Self-hosted. The server operator can access stored data.';
+    const retention = document.getElementById('cloudRetentionCopy');
+    if (retention) retention.textContent = hoursText;
     const summary = document.getElementById('policySummary');
     if (summary) {
-      summary.innerHTML =
-        '<ul><li>Anonymous session; no account or password.</li><li>Jobs and files are kept for a limited retention period.</li><li>The operator can access stored data.</li><li>Personal YouTube cookies are never used.</li></ul>';
+      summary.innerHTML = `<ul><li>Anonymous session; no account or password.</li><li>Jobs and files are deleted after ${hoursText}.</li><li>The operator can access stored data.</li><li>Personal YouTube cookies are never used.</li></ul>`;
     }
   } catch {
     // Static hosting or the local app: the local policy is correct.

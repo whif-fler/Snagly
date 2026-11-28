@@ -1,6 +1,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
+const SnaglyMode = window.SnaglyMode;
 
 const ui = {
   urls: $('urls'),
@@ -50,6 +51,8 @@ const ui = {
   libraryMenu: $('libraryMenu'),
   theme: $('themeButton'),
   hint: $('composerHint'),
+  publicVideosNote: $('publicVideosNote'),
+  composerOptions: $('composerOptions'),
   choose: $('chooseButton'),
   selectionPanel: $('selectionPanel'),
   selectionSources: $('selectionSources'),
@@ -121,6 +124,7 @@ const ui = {
   youtubeStatus: $('youtubeStatus'),
   youtubeHelp: $('youtubeHelp'),
   youtubeNote: $('youtubeNote'),
+  connectionsTab: $('tab-connections'),
   checkTools: $('checkTools'),
   connectionsToolsSection: $('connectionsToolsSection'),
   toolYtdlp: $('toolYtdlp'),
@@ -482,7 +486,8 @@ async function idbDelete(key) {
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
-  } catch {} finally {
+  } catch {
+  } finally {
     db?.close();
   }
 }
@@ -605,11 +610,7 @@ function jobExpired(job) {
 }
 
 function expiryText(job) {
-  if (!job?.expiresAt) return '';
-  const ms = new Date(job.expiresAt).getTime() - Date.now();
-  if (ms <= 0) return 'expired';
-  const hours = Math.ceil(ms / 3600000);
-  return hours >= 2 ? `expires in ${hours} hours` : 'expires within an hour';
+  return job?.expiresAt ? SnaglyMode.expiryText(job.expiresAt) : '';
 }
 
 function savedTrackCount(job) {
@@ -928,14 +929,28 @@ function autoSave() {
 
 function renderCloudSave() {
   if (cloud.mode !== 'cloud') return;
-  ui.saveRow.hidden = false;
-  const hours = cloud.retentionHours || 24;
+  const hours = SnaglyMode.retentionHours(cloud);
+  const canPick = SnaglyMode.showFolderPicker({
+    mode: cloud.mode,
+    fileSystemAccess: cloud.capabilities.fileSystemAccess,
+    directoryPicker: supportsDirectoryPicker
+  });
+  // Without the File System Access API there is no folder to choose, so hide
+  // the control entirely and let the library's ZIP/file downloads take over.
+  ui.saveRow.hidden = !canPick;
+  if (ui.publicVideosNote) {
+    ui.publicVideosNote.textContent = SnaglyMode.publicVideosNote(cloud.mode);
+    ui.publicVideosNote.hidden = false;
+  }
+  if (ui.connectionButton) ui.connectionButton.hidden = true;
+  if (ui.connectionsTab) ui.connectionsTab.hidden = true;
   if (ui.heroCopy)
     ui.heroCopy.textContent =
       'Paste a playlist or a video. This server downloads it, tags it, and gets it ready to save to your device.';
-  if (ui.footerNote)
-    ui.footerNote.textContent = `Anonymous session. Server copies expire after ${hours} hours.`;
-  ui.hint.textContent = `Server copies expire after ${hours} hours. Save the files you want to keep. Only download media you have rights to.`;
+  if (ui.footerNote) ui.footerNote.textContent = SnaglyMode.footerCopy('cloud', hours);
+  ui.hint.textContent = `Files are processed on our server and deleted after ${SnaglyMode.hoursLabel(
+    hours
+  )}. Save them before they expire. Only download media you have rights to.`;
   ui.hint.classList.remove('is-warning');
   ui.savePath.readOnly = true;
   ui.savePath.placeholder = 'Choose a folder';
@@ -1012,15 +1027,22 @@ function renderDestination() {
     const settingsState = destinationState(settingsKind);
     const settingsText = settingsKind === 'audio' ? ui.settingsAudioDestination : ui.settingsVideoDestination;
     const settingsChoose = settingsKind === 'audio' ? ui.settingsAudioChoose : ui.settingsVideoChoose;
-    const settingsReconnect = settingsKind === 'audio' ? ui.settingsAudioReconnect : ui.settingsVideoReconnect;
+    const settingsReconnect =
+      settingsKind === 'audio' ? ui.settingsAudioReconnect : ui.settingsVideoReconnect;
     const settingsForget = settingsKind === 'audio' ? ui.settingsAudioForget : ui.settingsVideoForget;
-    settingsText.textContent = settingsState.text;
+    const settingsRow = settingsChoose.closest('.settings-row');
+    if (settingsRow) settingsRow.hidden = !supportsDirectoryPicker;
+    settingsText.textContent = supportsDirectoryPicker
+      ? settingsState.text
+      : "This browser can't write to folders. Use the library's file and ZIP downloads.";
     settingsChoose.textContent = settingsTarget.name ? 'Change folder' : 'Choose folder';
     settingsChoose.disabled = !supportsDirectoryPicker;
     settingsReconnect.hidden = !settingsTarget.needsPermission;
     settingsReconnect.disabled = !supportsDirectoryPicker;
     settingsForget.hidden = !settingsTarget.handle;
   }
+  const autoSaveRow = ui.autoSaveToggle.closest('.settings-row');
+  if (autoSaveRow) autoSaveRow.hidden = !supportsDirectoryPicker;
   ui.autoSaveToggle.checked = autoSaveEnabled;
   ui.autoSaveToggle.disabled = !supportsDirectoryPicker;
 }
@@ -1063,6 +1085,12 @@ function renderSettings() {
   if (cloud.mode === 'cloud') {
     renderCloudSave();
   } else {
+    ui.saveRow.hidden = false;
+    ui.browse.hidden = false;
+    if (ui.publicVideosNote) ui.publicVideosNote.hidden = true;
+    if (ui.connectionButton) ui.connectionButton.hidden = false;
+    if (ui.connectionsTab) ui.connectionsTab.hidden = false;
+    if (ui.footerNote) ui.footerNote.textContent = SnaglyMode.footerCopy('local');
     ui.destinationIcon.hidden = true;
     ui.destinationLabel.textContent = 'Save to';
     if (!ui.savePath.value) ui.savePath.value = status.root || '';
@@ -1081,29 +1109,35 @@ function renderSettings() {
 }
 
 function renderSettingsDialog() {
-  const isCloud = cloud.mode === 'cloud';
-  const hours = cloud.retentionHours || 24;
+  const isCloud = SnaglyMode.modeOf(cloud) === 'cloud';
+  const hours = SnaglyMode.retentionHours(cloud);
+  const hoursText = SnaglyMode.hoursLabel(hours);
+  const showConnections = SnaglyMode.showConnectionsTab(cloud);
+  if (ui.connectionsTab) ui.connectionsTab.hidden = !showConnections;
+  const nav = ui.settingsModal.querySelector('.settings-nav');
+  if (nav) nav.classList.toggle('is-cloud', !showConnections);
+  if (!showConnections && activeSettingsTab === 'connections') setSettingsTab('general');
   ui.settingsMode.textContent = isCloud ? 'Cloud server · anonymous session' : 'Local app · this computer';
   ui.settingsFootNote.textContent = isCloud
-    ? `Server copies expire after ${hours} hours.`
+    ? `Server copies expire after ${hoursText}.`
     : 'Local files stay on this computer.';
   ui.cloudStorageSection.hidden = !isCloud;
   ui.localStorageSection.hidden = isCloud;
   ui.retentionRow.hidden = !isCloud;
-  ui.settingsRetentionValue.textContent = `${hours} hours`;
+  ui.settingsRetentionValue.textContent = hoursText;
   if (!isCloud && ui.settingsLocalRoot) {
     const focused = document.activeElement === ui.settingsLocalRoot;
     if (!localRootDirty && !focused) ui.settingsLocalRoot.value = status.root || '';
     syncLocalRootButtons();
   }
   ui.privacyRetentionRow.hidden = !isCloud;
-  ui.privacyRetention.textContent = `${hours} hours`;
+  ui.privacyRetention.textContent = `Deleted after ${hoursText}`;
   ui.privacyMode.textContent = isCloud ? 'On this server' : 'On this computer';
   ui.privacyCookies.textContent = 'Not used';
   ui.sessionMode.textContent = isCloud ? 'Cloud · anonymous session' : 'Local app';
   ui.sessionUserRow.hidden = !isCloud;
   ui.sessionRetentionRow.hidden = !isCloud;
-  ui.sessionRetention.textContent = `${hours} hours`;
+  ui.sessionRetention.textContent = hoursText;
   ui.sessionWhere.textContent = isCloud ? 'On the server' : 'On this computer';
   ui.connectionsToolsSection.hidden = isCloud;
   ui.deleteAllButton.hidden = isCloud;
@@ -1295,7 +1329,7 @@ function deliveryState(job) {
     }
     if (saved)
       return { badge: `Saved ${saved}/${doneTracks.length}`, badgeClass: 'saved', saved, doneTracks };
-    if (doneTracks.length) return { badge: 'On server', badgeClass: '', saved, doneTracks };
+    if (doneTracks.length) return { badge: 'Ready to save', badgeClass: '', saved, doneTracks };
     if (job.failed) return { badge: 'Failed', badgeClass: 'expired', saved, doneTracks };
     if (job.cancelled) return { badge: 'Cancelled', badgeClass: '', saved, doneTracks };
     return { badge: 'Queued', badgeClass: '', saved, doneTracks };
@@ -1317,14 +1351,14 @@ function tileMetaText(job) {
     return `${pct}% downloaded, ${job.done} of ${job.trackCount} ready`;
   }
   if (jobExpired(job)) {
-    return `Server copy expired. Download again to make a new copy.`;
+    return SnaglyMode.expiredText(SnaglyMode.retentionHours(cloud));
   }
   if (cloud.mode === 'cloud') {
     if (saved) {
       return `${job.trackCount} track${job.trackCount === 1 ? '' : 's'}, ${saved} saved to this device`;
     }
     const expiry = expiryText(job);
-    return `${job.trackCount} track${job.trackCount === 1 ? '' : 's'}, ready on server${expiry ? `, ${expiry}` : ''}`;
+    return `${job.trackCount} track${job.trackCount === 1 ? '' : 's'}, ready to save${expiry ? `, ${expiry}` : ''}`;
   }
   if (job.failed) return `${job.done} of ${job.trackCount} tracks ready, ${job.failed} failed`;
   if (job.cancelled) return `${job.done} of ${job.trackCount} tracks ready, ${job.cancelled} cancelled`;
@@ -1417,10 +1451,12 @@ function renderLibrary() {
         ],
         expired: [
           'No expired copies',
-          'Server copies are removed after the retention window. Save the files you want to keep.'
+          `Server copies are removed after ${SnaglyMode.hoursLabel(
+            SnaglyMode.retentionHours(cloud)
+          )}. Save the files you want to keep.`
         ],
         server: [
-          'Nothing waiting on the server',
+          'Nothing ready to save',
           'Start a download, then save the finished tracks before the server copy expires.'
         ],
         running: ['Nothing is downloading', 'Queued and active downloads appear here as they run.'],
@@ -1434,10 +1470,7 @@ function renderLibrary() {
       ui.emptyAction.textContent = 'Clear filters';
     } else {
       ui.emptyTitle.textContent = 'Nothing here yet';
-      ui.emptyText.textContent =
-        cloud.mode === 'cloud'
-          ? 'Paste a playlist or video above. Finished downloads appear here, ready to save to your device.'
-          : 'Paste a playlist or video above. Finished downloads appear here with their folder location.';
+      ui.emptyText.textContent = SnaglyMode.emptyCopy(cloud.mode, SnaglyMode.retentionHours(cloud));
       ui.emptyAction.textContent = 'Paste a link';
     }
   }
@@ -1604,11 +1637,9 @@ function openTrackModal(jobId) {
   `;
   const notice = expired
     ? `<div class="modal-notice" role="note">
-         <strong>The server copy has expired.</strong>
-         <span>${
-           saved
-             ? 'The files you saved stay on your device. Download again to make a fresh copy for saving or ZIP downloads.'
-             : 'Download again to make a new copy you can save to your device.'
+         <strong>Removed after ${SnaglyMode.retentionHours(cloud)}h.</strong>
+         <span>Paste the link again to re-download.${
+           saved ? ' Files you saved stay on your device.' : ''
          }</span>
        </div>`
     : '';
@@ -1644,7 +1675,7 @@ function openTrackModal(jobId) {
             : '';
         const delivery =
           cloud.mode === 'cloud' && t.status === 'done'
-            ? `<span class="track-delivery ${trackSaved ? 'is-saved' : ''}">${trackSaved ? 'Saved to this device' : 'On server'}</span>`
+            ? `<span class="track-delivery ${trackSaved ? 'is-saved' : ''}">${trackSaved ? 'Saved to this device' : 'Ready to save'}</span>`
             : '';
         const authHint =
           t.error && isAuthError(t.error)
@@ -1954,7 +1985,7 @@ function trapFocus(container, event) {
 }
 
 function settingsTabs() {
-  return Array.from(document.querySelectorAll('.settings-nav [role="tab"]'));
+  return Array.from(document.querySelectorAll('.settings-nav [role="tab"]')).filter((tab) => !tab.hidden);
 }
 
 function setSettingsTab(name, { focus = false } = {}) {
@@ -2709,6 +2740,9 @@ ui.urls.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') startDownload();
 });
 let previewDebounce = null;
+// Options start collapsed so the first screen stays simple. Open them once,
+// the first time a complete link is pasted, then leave the choice to the user.
+let optionsAutoOpened = false;
 // Avoid firing yt-dlp for half-typed links. Only a complete video, playlist,
 // or shorts URL is worth a round trip.
 function hasCompleteYouTubeLink(text) {
@@ -2738,6 +2772,11 @@ ui.urls.addEventListener('input', () => {
     return;
   }
   if (!hasCompleteYouTubeLink(ui.urls.value)) return;
+  // The detailed options are only useful once there is a real link to work on.
+  if (!optionsAutoOpened && ui.composerOptions) {
+    ui.composerOptions.open = true;
+    optionsAutoOpened = true;
+  }
   previewDebounce = setTimeout(() => {
     previewLinks();
   }, 300);

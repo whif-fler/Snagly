@@ -7,7 +7,8 @@
 
 <p align="center">
   <strong>YouTube playlists → a tidy, tagged music library.</strong><br>
-  Run it locally on Windows, or self-host it for a small group.
+  Run it locally on Windows, or self-host it for a small group.<br>
+  No account; uses an anonymous session cookie in cloud mode.
 </p>
 
 <p align="center">
@@ -37,6 +38,14 @@ Both modes share validation, naming, storage and download logic from `packages/`
 Both are guest-only: neither reads browser cookies or a `cookies.txt` export. The
 cloud app also never accepts arbitrary server paths and never exposes one user's
 files to another.
+
+## Which mode do I want?
+
+| If you want to…                       | Use                   | Start here                                                                                         |
+| ------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------- |
+| Use an instance someone else runs     | Hosted cloud          | Open the URL you were given. Nothing to install, and files are deleted after the retention window. |
+| Run your own server for a small group | Self-host with Docker | [Run the cloud app](#run-the-cloud-app): Docker Compose behind Cloudflare Tunnel.                  |
+| Download on your own Windows PC       | Local mode            | [Run locally](#run-locally): `node server.js`, files go straight to a folder you choose.           |
 
 ## Features
 

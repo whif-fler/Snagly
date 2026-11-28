@@ -254,6 +254,44 @@ button { cursor: pointer; }
   box-shadow: inset 0 0 0 1px var(--signal);
 }
 
+.composer-note {
+  margin: 10px 0 0;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.composer-options { margin-top: 14px; }
+.composer-options-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 2px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.composer-options-summary::-webkit-details-marker { display: none; }
+.composer-options-summary:hover { color: var(--ink); }
+.composer-options-summary:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+.options-chevron {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  transition: transform .18s ease;
+}
+.composer-options[open] .options-chevron { transform: rotate(180deg); }
+.composer-options-body { margin-top: 4px; }
+.options-choose { margin-top: 14px; }
+.footer-left:empty { display: none; }
+
 /* Grouped settings row: label on the left, control on the right. */
 .quality-section {
   display: grid;
@@ -1903,6 +1941,8 @@ button { cursor: pointer; }
   }
   .settings-nav button:nth-child(4) { grid-column: 2 / span 2; }
   .settings-nav button:nth-child(5) { grid-column: 4 / span 2; }
+  /* Cloud mode drops the Connections tab; centre the remaining last tab. */
+  .settings-nav.is-cloud button:nth-child(5) { grid-column: 3 / span 2; }
 }
 
 @media (max-width: 430px) {
@@ -1987,18 +2027,21 @@ button { cursor: pointer; }
    composer's original separator and spacing; only the icon and label change. */
 .save-row[data-kind] {
   grid-template-columns: minmax(112px, auto) minmax(0, 1fr) auto;
-  align-items: center;
+  /* Top-align the folder button with the input. Centring it against the
+     input + status text leaves it floating below the field. */
+  align-items: start;
 }
 .save-row[data-kind] label {
   grid-column: auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding-top: 0;
+  /* Optically centre the label and icon against the 34px input. */
+  padding-top: 7px;
   color: var(--ink);
   font-weight: 600;
 }
-.save-row[data-kind] .save-control { align-self: center; }
+.save-row[data-kind] .save-control { align-self: start; }
 .destination-icon {
   display: inline-grid;
   place-items: center;
@@ -2057,11 +2100,16 @@ button { cursor: pointer; }
 
 @media (max-width: 760px) {
   .save-row[data-kind] { grid-template-columns: minmax(108px, auto) minmax(0, 1fr) auto; }
-  .settings-actions .folder-button { flex: 1 1 140px; }
+  .save-row[data-kind] label { padding-top: 10px; }
+  /* Folder and Reconnect share the row evenly; Forget keeps its natural
+     width and wraps instead of stretching into a full-width destructive
+     button. */
+  .settings-actions .folder-button { flex: 1 1 0; min-width: 0; }
+  .settings-actions .settings-forget { flex: 0 0 auto; }
 }
 @media (max-width: 500px) {
   .save-row[data-kind] { grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
-  .save-row[data-kind] label { grid-column: 1 / -1; }
+  .save-row[data-kind] label { grid-column: 1 / -1; padding-top: 0; }
   .save-row[data-kind] .folder-button { min-width: 92px; }
 }
 
