@@ -1983,22 +1983,11 @@ button { cursor: pointer; }
   .switch input:checked + .switch-track::after { transform: translateX(20px); }
 }
 
-/* Separate music and video destinations. The icons make the two rows
-   scannable, and the folder buttons stay visually quiet until a folder is
-   chosen, then pick up a subtle success tint. */
-.destination-list {
-  display: grid;
-  gap: 10px;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--hairline-soft);
-}
+/* One destination row that follows the selected Music/Video mode. Keep the
+   composer's original separator and spacing; only the icon and label change. */
 .save-row[data-kind] {
-  grid-template-columns: 96px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(118px, auto) minmax(0, 1fr) auto;
   align-items: center;
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
 }
 .save-row[data-kind] label {
   display: inline-flex;
@@ -2012,25 +2001,35 @@ button { cursor: pointer; }
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  font-size: 13px;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  font-size: 12px;
   font-weight: 700;
+  line-height: 1;
 }
 .save-row[data-kind='audio'] .destination-icon {
-  background: color-mix(in srgb, var(--success) 16%, transparent);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
   color: var(--success);
 }
 .save-row[data-kind='video'] .destination-icon {
-  background: color-mix(in srgb, var(--signal) 16%, transparent);
+  background: color-mix(in srgb, var(--signal) 14%, transparent);
   color: var(--signal);
+}
+.settings-label .destination-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
+  font-size: 11px;
+  vertical-align: -4px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
 }
 .folder-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 104px;
+  min-width: 96px;
   font-weight: 600;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
@@ -2044,7 +2043,7 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 760px) {
-  .save-row[data-kind] { grid-template-columns: 112px minmax(0, 1fr) auto; }
+  .save-row[data-kind] { grid-template-columns: minmax(108px, auto) minmax(0, 1fr) auto; }
   .settings-actions .folder-button { flex: 1 1 140px; }
 }
 @media (max-width: 500px) {

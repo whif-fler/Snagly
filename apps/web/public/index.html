@@ -75,32 +75,16 @@
           <span class="quality-hint" id="videoQualityHint">Video + audio, source quality</span>
         </div>
 
-        <div class="save-row" id="saveRow">
-          <label for="savePath">Save to</label>
+        <div class="save-row" id="saveRow" data-kind="audio">
+          <label for="savePath">
+            <span class="destination-icon" id="destinationIcon" aria-hidden="true">♪</span>
+            <span id="destinationLabel">Music folder</span>
+          </label>
           <div class="save-control">
             <input id="savePath" type="text" spellcheck="false" autocomplete="off" aria-describedby="destinationState">
             <span class="save-state" id="destinationState" role="status"></span>
           </div>
-          <button class="quiet-button" id="browseButton" type="button">Browse</button>
-        </div>
-
-        <div class="destination-list" id="destinationRows" hidden>
-          <div class="save-row" data-kind="audio">
-            <label for="audioSavePath"><span class="destination-icon" aria-hidden="true">♪</span>Music</label>
-            <div class="save-control">
-              <input id="audioSavePath" type="text" readonly spellcheck="false" autocomplete="off" aria-describedby="audioDestinationState">
-              <span class="save-state" id="audioDestinationState" role="status"></span>
-            </div>
-            <button class="quiet-button folder-button" id="audioBrowseButton" type="button">Choose</button>
-          </div>
-          <div class="save-row" data-kind="video">
-            <label for="videoSavePath"><span class="destination-icon" aria-hidden="true">▶</span>Video</label>
-            <div class="save-control">
-              <input id="videoSavePath" type="text" readonly spellcheck="false" autocomplete="off" aria-describedby="videoDestinationState">
-              <span class="save-state" id="videoDestinationState" role="status"></span>
-            </div>
-            <button class="quiet-button folder-button" id="videoBrowseButton" type="button">Choose</button>
-          </div>
+          <button class="quiet-button folder-button" id="browseButton" type="button">Choose</button>
         </div>
 
         <div class="composer-footer">
@@ -360,7 +344,7 @@
                 <h3>Save finished files</h3>
                 <div class="settings-row settings-row-stack">
                   <div class="settings-row-copy">
-                    <span class="settings-label">Music folder</span>
+                    <span class="settings-label"><span class="destination-icon" aria-hidden="true">♪</span> Music folder</span>
                     <span class="settings-help" id="settingsAudioDestination">Choose where finished audio is saved.</span>
                   </div>
                   <div class="settings-actions">
@@ -370,7 +354,7 @@
                 </div>
                 <div class="settings-row settings-row-stack">
                   <div class="settings-row-copy">
-                    <span class="settings-label">Video folder</span>
+                    <span class="settings-label"><span class="destination-icon" aria-hidden="true">▶</span> Video folder</span>
                     <span class="settings-help" id="settingsVideoDestination">Choose where finished video is saved.</span>
                   </div>
                   <div class="settings-actions">

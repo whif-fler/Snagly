@@ -9,13 +9,8 @@ const ui = {
   saveRow: $('saveRow'),
   browse: $('browseButton'),
   saveState: $('destinationState'),
-  destinationRows: $('destinationRows'),
-  audioPath: $('audioSavePath'),
-  audioBrowse: $('audioBrowseButton'),
-  audioState: $('audioDestinationState'),
-  videoPath: $('videoSavePath'),
-  videoBrowse: $('videoBrowseButton'),
-  videoState: $('videoDestinationState'),
+  destinationIcon: $('destinationIcon'),
+  destinationLabel: $('destinationLabel'),
   heroCopy: $('heroCopy'),
   footerNote: $('footerNote'),
   connectionButton: $('connectionButton'),
@@ -834,8 +829,7 @@ function autoSave() {
 
 function renderCloudSave() {
   if (cloud.mode !== 'cloud') return;
-  ui.saveRow.hidden = true;
-  ui.destinationRows.hidden = false;
+  ui.saveRow.hidden = false;
   const hours = cloud.retentionHours || 24;
   if (ui.heroCopy)
     ui.heroCopy.textContent =
@@ -847,7 +841,6 @@ function renderCloudSave() {
   ui.savePath.readOnly = true;
   ui.savePath.placeholder = 'Choose a folder';
   ui.browse.hidden = !supportsDirectoryPicker;
-  ui.browse.textContent = 'Browse';
   renderDestination();
 }
 
@@ -892,26 +885,31 @@ function destinationState(kind) {
 
 function renderDestination() {
   if (cloud.mode !== 'cloud') return;
-  for (const kind of ['audio', 'video']) {
-    const target = saveTarget(kind);
-    const state = destinationState(kind);
-    const path = kind === 'audio' ? ui.audioPath : ui.videoPath;
-    const browse = kind === 'audio' ? ui.audioBrowse : ui.videoBrowse;
-    const status = kind === 'audio' ? ui.audioState : ui.videoState;
-    path.value = state.value;
-    status.textContent = state.text;
-    status.className = `save-state ${state.kind}`.trim();
-    browse.hidden = !supportsDirectoryPicker;
-    browse.textContent = target.name ? 'Change' : 'Choose';
-    browse.classList.toggle('is-set', Boolean(target.handle));
+  // The composer shows one destination: the one matching the current mode.
+  const kind = status.isVideo ? 'video' : 'audio';
+  const target = saveTarget(kind);
+  const state = destinationState(kind);
+  ui.saveRow.dataset.kind = kind;
+  ui.destinationIcon.hidden = false;
+  ui.destinationIcon.textContent = kind === 'video' ? '▶' : '♪';
+  ui.destinationLabel.textContent = kind === 'video' ? 'Video folder' : 'Music folder';
+  ui.savePath.value = state.value;
+  ui.saveState.textContent = state.text;
+  ui.saveState.className = `save-state ${state.kind}`.trim();
+  ui.browse.hidden = !supportsDirectoryPicker;
+  ui.browse.textContent = target.name ? 'Change' : 'Choose';
+  ui.browse.classList.toggle('is-set', Boolean(target.handle));
 
-    const settingsText = kind === 'audio' ? ui.settingsAudioDestination : ui.settingsVideoDestination;
-    const settingsChoose = kind === 'audio' ? ui.settingsAudioChoose : ui.settingsVideoChoose;
-    const settingsForget = kind === 'audio' ? ui.settingsAudioForget : ui.settingsVideoForget;
-    settingsText.textContent = state.text;
-    settingsChoose.textContent = target.name ? 'Change folder' : 'Choose folder';
+  for (const settingsKind of ['audio', 'video']) {
+    const settingsTarget = saveTarget(settingsKind);
+    const settingsState = destinationState(settingsKind);
+    const settingsText = settingsKind === 'audio' ? ui.settingsAudioDestination : ui.settingsVideoDestination;
+    const settingsChoose = settingsKind === 'audio' ? ui.settingsAudioChoose : ui.settingsVideoChoose;
+    const settingsForget = settingsKind === 'audio' ? ui.settingsAudioForget : ui.settingsVideoForget;
+    settingsText.textContent = settingsState.text;
+    settingsChoose.textContent = settingsTarget.name ? 'Change folder' : 'Choose folder';
     settingsChoose.disabled = !supportsDirectoryPicker;
-    settingsForget.hidden = !target.handle;
+    settingsForget.hidden = !settingsTarget.handle;
   }
   ui.autoSaveToggle.checked = autoSaveEnabled;
   ui.autoSaveToggle.disabled = !supportsDirectoryPicker;
@@ -955,6 +953,8 @@ function renderSettings() {
   if (cloud.mode === 'cloud') {
     renderCloudSave();
   } else {
+    ui.destinationIcon.hidden = true;
+    ui.destinationLabel.textContent = 'Save to';
     if (!ui.savePath.value) ui.savePath.value = status.root || '';
     if (status.format && !ui.formatSelect.value) {
       ui.formatSelect.value = status.format;
@@ -979,8 +979,6 @@ function renderSettingsDialog() {
     : 'Local files stay on this computer.';
   ui.cloudStorageSection.hidden = !isCloud;
   ui.localStorageSection.hidden = isCloud;
-  ui.saveRow.hidden = isCloud;
-  ui.destinationRows.hidden = !isCloud;
   ui.retentionRow.hidden = !isCloud;
   ui.settingsRetentionValue.textContent = `${hours} hours`;
   if (!isCloud && ui.settingsLocalRoot) {
@@ -2648,23 +2646,11 @@ ui.urls.addEventListener('dragover', (event) => {
 ui.urls.addEventListener('dragleave', () => ui.urls.classList.remove('drag'));
 ui.urls.addEventListener('drop', addDroppedLinks);
 
-for (const kind of ['audio', 'video']) {
-  const button = kind === 'audio' ? ui.audioBrowse : ui.videoBrowse;
-  button.addEventListener('click', async () => {
-    button.disabled = true;
-    try {
-      await chooseSaveDir(kind);
-    } finally {
-      button.disabled = false;
-    }
-  });
-}
-
 ui.browse.addEventListener('click', async () => {
   if (cloud.mode === 'cloud') {
     ui.browse.disabled = true;
     try {
-      await chooseSaveDir('video');
+      await chooseSaveDir(status.isVideo ? 'video' : 'audio');
     } finally {
       ui.browse.disabled = false;
     }
@@ -3356,6 +3342,7 @@ function applyMode() {
   ui.modeVideo.classList.toggle('active', isVideo);
   ui.modeAudio.setAttribute('aria-pressed', String(!isVideo));
   ui.modeVideo.setAttribute('aria-pressed', String(isVideo));
+  renderDestination();
   updateSelectionNouns();
   updateDownloadButton();
 }
