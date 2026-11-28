@@ -69,9 +69,12 @@ RUN set -eu; \
   CSS_HASH=$(sha256sum styles.css | cut -c1-12); \
   mv app.js "app.${JS_HASH}.js"; \
   mv styles.css "styles.${CSS_HASH}.css"; \
-  sed -i "s|href=\"/styles.css\"|href=\"/styles.${CSS_HASH}.css\"|; s|src=\"/app.js\"|src=\"/app.${JS_HASH}.js\"|" index.html; \
+  for page in index.html privacy.html; do \
+    sed -i "s|href=\"/styles.css\"|href=\"/styles.${CSS_HASH}.css\"|; s|src=\"/app.js\"|src=\"/app.${JS_HASH}.js\"|" "$page"; \
+    grep -q "styles.${CSS_HASH}.css" "$page"; \
+  done; \
   grep -q "app.${JS_HASH}.js" index.html; \
-  grep -q "styles.${CSS_HASH}.css" index.html
+  ! grep -q 'href="/styles.css"' privacy.html
 
 ENV NODE_ENV=production \
   SNAGLY_MODE=cloud \
