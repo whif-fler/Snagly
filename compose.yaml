@@ -28,7 +28,9 @@ services:
       - snagly-data:/data
       # Optional: ./secrets/cookies.txt exported from a signed-in YouTube
       # account. Only used when SNAGLY_COOKIES_FILE is set in .env.
-      - ./secrets:/run/secrets:ro
+      # Read-write because yt-dlp rewrites the file when refreshing cookies;
+      # a read-only file makes it exit with PermissionError.
+      - ./secrets:/run/secrets
     read_only: true
     tmpfs:
       # `exec` is required: Docker mounts tmpfs noexec by default, and the

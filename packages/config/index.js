@@ -66,6 +66,9 @@ function loadConfig(env = process.env) {
     // Optional Netscape-format cookies.txt for a signed-in YouTube account.
     // Cloud/datacenter IPs get "Sign in to confirm you're not a bot" without it.
     cookiesFile: env.SNAGLY_COOKIES_FILE ? path.resolve(env.SNAGLY_COOKIES_FILE) : '',
+    // YouTube n/signature challenges need a JS runtime. The server itself is
+    // Node, so its binary is used unless an explicit path is provided.
+    jsRuntimePath: env.SNAGLY_JS_RUNTIME_PATH || process.execPath,
     sessionTtlMs: envInt(env.SNAGLY_SESSION_TTL_DAYS, 30, { min: 1, max: 365 }) * 24 * 60 * 60 * 1000,
     retentionMs: envInt(env.SNAGLY_RETENTION_HOURS, 24, { min: 1, max: 24 * 30 }) * 60 * 60 * 1000,
     cleanupIntervalMs: envInt(env.SNAGLY_CLEANUP_MINUTES, 10, { min: 1, max: 1440 }) * 60 * 1000,

@@ -9,6 +9,7 @@ function createAdapter(config, { logger, tools } = {}) {
     ytdlpPath: tools?.yt || config.ytdlpPath,
     ffmpegPath: tools?.ffmpeg || config.ffmpegPath,
     cookiesFile: config.cookiesFile || '',
+    jsRuntimePath: config.jsRuntimePath || '',
     logger,
     maxDurationMs: config.maxDurationMs
   });
