@@ -28,7 +28,11 @@ services:
       - snagly-data:/data
     read_only: true
     tmpfs:
-      - /tmp:size=${SNAGLY_TMP_SIZE:-512m},mode=1777
+      # `exec` is required: Docker mounts tmpfs noexec by default, and the
+      # yt-dlp standalone binary unpacks itself (including libz.so.1) into
+      # /tmp before running. Without exec it fails with
+      # "libz.so.1: failed to map segment from shared object".
+      - /tmp:size=${SNAGLY_TMP_SIZE:-512m},mode=1777,exec
     security_opt:
       - no-new-privileges:true
     cap_drop:
