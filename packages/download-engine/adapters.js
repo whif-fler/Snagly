@@ -143,7 +143,7 @@ function createYtDlpAdapter({ ytdlpPath, ffmpegPath, logger, maxDurationMs = 30 
   async function extract(url, { signal } = {}) {
     const { stdout } = await runProcess(
       ytdlpPath,
-      [...base, '--dump-single-json', '--flat-playlist', '--skip-download', '--no-playlist-check', url],
+      [...base, '--dump-single-json', '--flat-playlist', '--skip-download', url],
       { signal, timeoutMs: 120_000, maxOutputBytes: 32 * 1024 * 1024 }
     );
     const data = parseJson(stdout);
